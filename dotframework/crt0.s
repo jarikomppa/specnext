@@ -4,11 +4,13 @@
 		;;	tomaz stih sun may 20 2012
 		.module crt0
 		.globl _heap
+		.globl _cmdline
 
 		.area _HEADER(ABS)
 	
 		di				; no rom anymore
 
+        ld (_cmdline),hl 
 		ld (#store_sp),sp		; store SP
 		ld sp,#16384
 
@@ -50,6 +52,7 @@
 		ei				; the rom is back
 		ret	
 store_sp:	.word 252
+_cmdline:   .word 0
 
 		;;	(linker documentation:) where specific ordering is desired - 
 		;;	the first linker input file should have the area definitions 

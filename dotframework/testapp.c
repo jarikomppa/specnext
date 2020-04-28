@@ -24,12 +24,14 @@ extern void freepage(unsigned char page);
 extern void setaychip(unsigned char val);
 extern void aywrite(unsigned char reg, unsigned char val);
 
-extern unsigned short getframecounter();
 extern void setupisr7();
 extern void closeisr7();
 extern void setupisr0();
 extern void di();
 extern void ei();
+
+extern unsigned short framecounter;
+extern char *cmdline;
 
 void printnum(unsigned char v, unsigned char x, unsigned char y)
 {
@@ -156,7 +158,6 @@ void test_audio()
     }
 }
 
-extern unsigned short framecounter;
 
 void isr()
 {
@@ -202,14 +203,26 @@ void test_readregs()
         printnum(readnextreg(i+32), 17, i);
         printnum(i+48, 20, i);
         printnum(readnextreg(i+48), 23, i);
-    }
+    }    
+}
 
-    
+void test_cmdline()
+{
+    unsigned char temp[128];
+    char i = 0;
+    while (i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
+    {
+        temp[i] = cmdline[i];
+        i++;
+    }
+    temp[i] = 0;
+    drawstringz(temp, 0, 0);    
 }
 
 void main()
 { 
-    test_isr();
+    test_cmdline();
+//    test_isr();
 //    test_audio();
 //    test_fileio();      
 //    test_mmu();
