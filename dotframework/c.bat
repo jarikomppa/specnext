@@ -1,1 +1,1 @@
-copy /y test.dot d:\dot\test
+@copy /y test.dot d:\dot\test
