@@ -13,7 +13,7 @@ const unsigned char propfont[] = {
 extern void drawstringz(unsigned char *aS, unsigned char aX, unsigned char aY);
 extern unsigned char fopen(unsigned char *fn, unsigned char mode);
 extern void fclose(unsigned char handle);
-extern void fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
+extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
 
 extern void writenextreg(unsigned char reg, unsigned char val);

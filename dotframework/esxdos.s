@@ -49,7 +49,7 @@ _fclose::
     .db     #0x9b
     ret
 
-;extern void fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
+;extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 _fread::
 	push	ix
 	ld	ix, #0
@@ -63,6 +63,8 @@ _fread::
 	ld	h,  6 (ix)
     rst     #0x8
     .db     #0x9d
+    ld  h, b
+    ld  l, c
 	pop	ix
 	ret
     
