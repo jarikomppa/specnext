@@ -59,11 +59,6 @@ void printnum(unsigned char v, unsigned char x, unsigned char y)
     drawstringz(temp, x, y);    
 }
 
-#define ACTIVEPAGE 0
-#define OFSLO 1
-#define OFSHI 2
-#define FRAMEDELAY 3
-
 /*
 rather wasteful memory layout
 0xe000 - nextreg original values
@@ -77,61 +72,22 @@ rather wasteful memory layout
 */
 __at (0xe000) unsigned char nextregbackup[256];
 __at (0xe100) unsigned char pages[100];
+
 __at (0xe200) unsigned char activepage;
 __at (0xe201) unsigned short ofs;
 __at (0xe203) unsigned char framedelay;
+__at (0xe204) unsigned char state;
+__at (0xe205) unsigned short srcofs;
+
 __at (0xe300) unsigned char ayregs[48];
 __at (0xe400) unsigned char buffer_a[1024];
 __at (0xe800) unsigned char buffer_b[1024];
 __at (0xf000) unsigned char zakheader[100];
 
-// really good candidate for optimization (both size and speed wise)
-void copybufbtoa()
-{
-    unsigned short i;
-    for (i = 0; i < 1024; i++)
-        buffer_a[i] = buffer_b[i];
-}
 
-void fillbufb()
+char memcmp(char *a, char *b, unsigned short l)
 {
-}
-
-void isr()
-{
-    unsigned char *d = (char*)0xc000;
-    unsigned char reg, val;
-    writenextreg(0x56, pages[2 + activepage]);
-    if (framedelay)
-    {
-        framedelay--;
-        return;
-    }
-
-    do
-    {
-        val = d[ofs]; ofs++;
-        reg = d[ofs]; ofs++;
-        if (reg < 48)
-        {
-            ayregs[reg] = val;
-            setaychip(reg >> 4); // AY 0, 1 or 2
-            aywrite(reg & 15, val); // low 4 bits is reg number
-            //port254(val & 7);
-        }
-        if (ofs == 8192)
-        {
-            ofs = 0;
-            activepage++;
-            writenextreg(0x56, pages[2 + activepage]);            
-        }
-    } while ((reg & 0x80) == 0);
-    framedelay = val - 1;   
-}
-
-char memcmp(char *a, char *b, char l)
-{
-    char i = 0;
+    unsigned short i = 0;
     while (i < l)
     {
         char v = a[i] - b[i];
@@ -141,14 +97,77 @@ char memcmp(char *a, char *b, char l)
     return 0;
 }
 
-void memset(char *a, char b, char l)
+void memset(char *a, char b, unsigned short l)
 {
-    char i = 0;
+    unsigned short i = 0;
     while (i < l)
     {
         a[i] = b;
         i++;
     }
+}
+
+void memcpy(char *a, char * b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        a[i] = b[i];
+        i++;
+    }
+}
+
+// really good candidate for optimization (both size and speed wise)
+void copybufbtoa()
+{
+    memcpy(buffer_a, buffer_b, 1024);
+}
+
+void fillbufb()
+{
+    writenextreg(0x55, pages[2 + activepage]);
+    writenextreg(0x56, pages[2 + activepage + 1]);
+    memcpy(buffer_b, (unsigned char*)(0xa000 + srcofs), 1024);    
+    srcofs += 1024;
+    if (srcofs == 8192)
+    {
+        srcofs = 0;
+        activepage++;
+    }
+}
+
+void isr()
+{
+    unsigned char reg, val;
+    if (state == 2)
+    {
+        ofs -= 1024;
+        state = 3;
+    }
+
+    if (framedelay)
+    {
+        framedelay--;
+        return;
+    }
+
+    do
+    {
+        val = buffer_a[ofs]; ofs++;
+        reg = buffer_a[ofs]; ofs++;
+        if (ofs == 1024)
+        {
+            state = 1;
+        }
+        if (reg < 48)
+        {
+            ayregs[reg] = val;
+            setaychip(reg >> 4); // AY 0, 1 or 2
+            aywrite(reg & 15, val); // low 4 bits is reg number
+            //port254(val & 7);
+        }
+    } while ((reg & 0x80) == 0);
+    framedelay = val - 1;   
 }
 
 char readstring(char f, char ofs)
@@ -230,39 +249,29 @@ void vis()
 {
     unsigned char i;
     unsigned char j;
-    unsigned char prog = ofs >> 8;
+    unsigned char prog = ofs >> 5;
     
     for (i = 0; i < 32; i++)
     {
         *((unsigned char *)yofs[23] + i) = (i >= prog) ? 0 : 0xff;
     }
+
+    prog = srcofs >> 8;
+    
+    for (i = 0; i < 32; i++)
+    {
+        *((unsigned char *)yofs[23] + i + 512) = (i >= prog) ? 0 : 0xff;
+    }
+
+    for (i = 0; i < 4; i++)
+    {
+        *((unsigned char *)yofs[23] + i + 1024) = (i == state) ? 0xff : 0;
+    }
     
     for (j = 0; j < 3; j++)
     {
         for (i = 0; i < 16; i++)
-            *((unsigned char *)yofs[18 + j] + i) = ayregs[j*16+i];
-     /*
-        prog = ayregs[0 + j * 16] >> 3;
-
-        for (i = 0; i < 32; i++)
-        {
-            *((unsigned char *)yofs[20 + j] + i ) = (i == prog) ? 0xff : 0;
-        }
-
-        prog = ayregs[2 + j * 16] >> 3;
-
-        for (i = 0; i < 32; i++)
-        {
-            *((unsigned char *)yofs[20 + j] + i + 256) = (i == prog) ? 0xff : 0;
-        }
-
-        prog = ayregs[4 + j * 16] >> 3;
-
-        for (i = 0; i < 32; i++)
-        {
-            *((unsigned char *)yofs[20 + j] + i + 512) = (i == prog) ? 0xff : 0;                
-        }
-        */
+            *((unsigned char *)yofs[18 + j] + i) = ayregs[j*16+i];    
     }
 }
 
@@ -273,10 +282,10 @@ void main()
     r = allocpage();
     f = readnextreg(0x57);
     writenextreg(0x57, r);    
-    nextregbackup[0x55] = readnextreg(0x55);
-    nextregbackup[0x56] = readnextreg(0x56);
-    nextregbackup[0x57] = f; // 0x57
-    nextregbackup[0x06] = readnextreg(0x06); // peripheral2
+    nextregbackup[0x55] = readnextreg(0x55); // mmu 5
+    nextregbackup[0x56] = readnextreg(0x56); // mmu 6
+    nextregbackup[0x57] = f;                 // mmu 7
+    nextregbackup[0x06] = readnextreg(0x06); // peripheral2 for fm vs ay flag
     nextregbackup[0x07] = readnextreg(0x07); // turbo
     pages[0] = 1; // number of allocated pages
     pages[1] = r; // allocated top page
@@ -301,9 +310,17 @@ void main()
         memset(ayregs, 0, 3*16);
         drawstringz("ZAK player 0.1 by Jari Komppa", 0, 0);
         drawstringz("http://iki.fi/sol", 0, 1);        
+
         activepage = 0;
         ofs = 0;
+        srcofs = 0;
         framedelay = 0;
+        state = 0;
+
+        fillbufb();
+        copybufbtoa();
+        fillbufb();
+
         setupisr7();
         readkeyboard();
         ei();
@@ -311,6 +328,16 @@ void main()
         {
             readkeyboard();
             vis(); 
+            if (state == 1)
+            {
+                copybufbtoa();
+                state = 2;
+            }
+            if (state == 3)
+            {
+                fillbufb();
+                state = 0;
+            }
         }    
         di();    
         closeisr7();
