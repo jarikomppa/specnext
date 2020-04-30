@@ -170,15 +170,11 @@ void readkeyboard()
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
+__sfr __at 0xfe gPort254;
+
 void do_port254(const unsigned char color) __z88dk_fastcall
 {
-    color; // color is in l
-    // Direct border color setting
-    __asm
-        ld a,l
-        out (254),a
-    __endasm;    
-    
+    gPort254 = color;   
 }
 
 void port254(const unsigned char color) __z88dk_fastcall
