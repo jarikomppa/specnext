@@ -37,6 +37,7 @@ src = [
 	"esxdos.s",
 	"ay.s",
 	"isr.s",
+	"dzx7_mega.s",
 	"zakplay.c"
 	]
 

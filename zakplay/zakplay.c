@@ -45,6 +45,7 @@ extern void closeisr7();
 extern void setupisr0();
 extern void di();
 extern void ei();
+extern unsigned char* dzx7_mega(unsigned char *src)  __z88dk_fastcall;         
 
 void printnum(unsigned char v, unsigned char x, unsigned char y)
 {
@@ -78,6 +79,7 @@ __at (0xe201) unsigned short ofs;
 __at (0xe203) unsigned char framedelay;
 __at (0xe204) unsigned char state;
 __at (0xe205) unsigned short srcofs;
+__at (0xe250) unsigned char debugvalue;
 
 __at (0xe300) unsigned char ayregs[48];
 __at (0xe400) unsigned char buffer_a[1024];
@@ -117,6 +119,28 @@ void memcpy(char *a, char * b, unsigned short l)
     }
 }
 
+void bytetohex(unsigned char v, char *p)
+{
+    char hex[17] = "0123456789ABCDEF";
+    *p = hex[v>>4];
+    p++;
+    *p = hex[v&0xf];
+}
+
+void shorttohex(unsigned short v, char *p)
+{
+    bytetohex(v >> 8, p);
+    bytetohex(v, p+2);
+}
+
+void printshort(unsigned short v, unsigned char x, unsigned char y)
+{
+    char temp[5];
+    shorttohex(v, temp);
+    temp[4] = 0;
+    drawstringz(temp, x, y);    
+}
+
 // really good candidate for optimization (both size and speed wise)
 void copybufbtoa()
 {
@@ -127,11 +151,14 @@ void fillbufb()
 {
     writenextreg(0x55, pages[2 + activepage]);
     writenextreg(0x56, pages[2 + activepage + 1]);
-    memcpy(buffer_b, (unsigned char*)(0xa000 + srcofs), 1024);    
-    srcofs += 1024;
-    if (srcofs == 8192)
+    //memcpy(buffer_b, (unsigned char*)srcofs, 1024);    
+    srcofs = (unsigned short)dzx7_mega((unsigned char*)srcofs) - 2;
+    //printshort(debugvalue, 0, 7);
+    //printshort(srcofs, 0, 8 + debugvalue);
+    debugvalue++;
+    if (srcofs >= 0xa000 + 8192)
     {
-        srcofs = 0;
+        srcofs -= 8192;
         activepage++;
     }
 }
@@ -256,7 +283,7 @@ void vis()
         *((unsigned char *)yofs[23] + i) = (i >= prog) ? 0 : 0xff;
     }
 
-    prog = srcofs >> 8;
+    prog = (srcofs >> 8) & 31;
     
     for (i = 0; i < 32; i++)
     {
@@ -311,9 +338,10 @@ void main()
         drawstringz("ZAK player 0.1 by Jari Komppa", 0, 0);
         drawstringz("http://iki.fi/sol", 0, 1);        
 
+        debugvalue = 0;
         activepage = 0;
         ofs = 0;
-        srcofs = 0;
+        srcofs = 0xa000;
         framedelay = 0;
         state = 0;
 
