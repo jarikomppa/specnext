@@ -301,11 +301,11 @@ char checkhdr(char f)
     
     if (zak_flags & 64) 
     {
-        drawstringz("AY-3-8910", 0, 20);
+        drawstringz("YM2149F", 0, 20);
     }
     else
     {
-        drawstringz("YM2149F", 0, 20);
+        drawstringz("AY-3-8910", 0, 20);
     }
     if (zak_chiptype == 1) drawstringz("Normal", 0, 21);
     if (zak_chiptype == 2) drawstringz("Turbosound", 0, 21);

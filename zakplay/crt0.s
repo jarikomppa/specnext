@@ -50,6 +50,7 @@
 		ld sp,(#store_sp)		; restore original SP
 		
 		ei				; the rom is back
+		or a ; clear carry
 		ret	
 store_sp:	.word 252
 _cmdline:   .word 0
