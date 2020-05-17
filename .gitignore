@@ -59,3 +59,4 @@ dkms.conf
 *.dot
 *.ihx
 *.lk
+zakplay/out/

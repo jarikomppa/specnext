@@ -59,17 +59,43 @@ unsigned char print(char * t, unsigned char x, unsigned char y)
     return y + 1;
 }
 
-void printnum(unsigned char v, unsigned char x, unsigned char y)
+unsigned char printn(char * t, char n, unsigned char x, unsigned char y)
 {
-    char temp[4];
-    temp[0] = '0';
-    temp[1] = '0';
-    temp[2] = '0';
-    temp[3] = 0;
-    while (v >= 100) { temp[0]++; v -= 100; }
-    while (v >= 10) { temp[1]++; v -= 10; }
-    while (v >= 1) { temp[2]++; v -= 1; }
-    print(temp, x, y);    
+    while (n)
+    {
+        drawchar(*t, x, y);
+        x++;
+        if (x == 32)
+        {
+            x = 0;
+            y++;
+        }
+        // todo: if y == 24, scroll up
+        t++;
+        n--;
+    }
+    return y + 1;
+}
+
+unsigned char atoi(unsigned short v, char *b)
+{
+    unsigned short d = v;
+    unsigned char p = 0;
+    b[p] = '0';
+    if (d >= 10000) { while (v >= 10000) { b[p]++; v -= 10000; } p++; b[p] = '0'; }
+    if (d >= 1000) { while (v >= 1000) { b[p]++; v -= 1000; } p++; b[p] = '0'; }
+    if (d >= 100) { while (v >= 100) { b[p]++; v -= 100; } p++; b[p] = '0'; }
+    if (d >= 10) { while (v >= 10) { b[p]++; v -= 10; } p++; b[p] = '0'; }
+    while (v >= 1) { b[p]++; v -= 1; } p++; 
+    b[p] = 0;
+    return p;
+}
+
+char printnum(unsigned short v, unsigned char x, unsigned char y)
+{
+    char temp[6];
+    atoi(v, temp);
+    return print(temp, x, y);    
 }
 
 void waitfordata()
@@ -123,6 +149,18 @@ void send(const char *b, unsigned char bytes)
     gPort254 = 0;
 }
 
+char memcmp(char *a, char *b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        char v = a[i] - b[i];
+        if (v != 0) return v;            
+        i++;
+    }
+    return 0;
+}
+
 void memset(char *a, char b, unsigned short l)
 {
     unsigned short i = 0;
@@ -133,6 +171,15 @@ void memset(char *a, char b, unsigned short l)
     }
 }
 
+void memcpy(char *a, char * b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        a[i] = b[i];
+        i++;
+    }
+}
 unsigned char strinstr(char *a, char *b)
 {
     if (!*b) return 1;
@@ -150,71 +197,151 @@ unsigned char strinstr(char *a, char *b)
     return 0;
 }
 
-unsigned char atcmd(char *cmd, char *expect, unsigned char x, unsigned char y)
+void bufinput(unsigned char *buf, unsigned short *len)
 {
-    char inbuf[128];
+    unsigned short timeout = 1000;
+    unsigned char t;
+    unsigned short ofs = 0;
+    while (timeout)
+    {
+        t = readuarttx();
+        if (t & 1)
+        {
+            ofs += receive(buf + ofs);
+        }
+        else
+        {
+            timeout--;
+        }
+    }    
+    *len = ofs - 1;
+}
+
+unsigned char atcmd(char *cmd, char *expect, char *buf)
+{
+    unsigned short timeout = 1000;
     unsigned char t;
     unsigned char l = 0;
     while (cmd[l]) l++;
     send(cmd, l);
     readkeyboard();
 
-    while (!KEYDOWN(SPACE))
-    {
+    while (timeout && !KEYDOWN(SPACE))
+    {        
         t = readuarttx();
         if (t & 1)
         {
-            receive(inbuf);
-            y = print(inbuf, x, y);
-            if (strinstr(inbuf, expect))
-                return y;            
+            receive(buf);
+            //print(buf, x, y);
+            if (strinstr(buf, expect))
+                return 0;
+        }
+        else
+        {
+            timeout--;
         }
         readkeyboard();
     }    
-    return 0;
+    return 1;
+}
+
+
+void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
+{    
+    const char *cccmd="AT+CIPSEND=12345\r\n";
+    char *cipsendcmd=(char*)cccmd;
+    char p = 11;
+    unsigned short l = cmdlen;
+    p += atoi(cmdlen, cipsendcmd+p);
+    cipsendcmd[p] = '\r'; p++;
+    cipsendcmd[p] = '\n'; p++;
+    send(cipsendcmd, p);
+    bufinput(output, len);
+    // todo: verify we have '>'
+    send(cmd, cmdlen);
+    bufinput(output, len);
+    l = *len;
+    while (*output != ':') 
+    {
+        output++;
+        l--;
+    }
+    output++;
+    *dataptr = output;
+    *len = l;
 }
 
 void main()
 { 
-    char inbuf[128];
-    unsigned char x, y, t;    
+    char inbuf[1024];
+    char fn[128];
+    unsigned char fnlen;
+    unsigned short filelen;
+    unsigned char x, y;   
+    unsigned char *dp;
+    unsigned short len; 
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
     x = 0;
     y = 0;
     
     y = print("NextSync 0.1 by Jari Komppa", x, y);
+    y++;
     // select esp uart
     writeuartctl(0); 
     // set the baud rate
     setupuart();
 
-    y = atcmd("\r\n", "ERROR", x, y);
-    if (y == 0) goto bailout;
-    atcmd("AT+CIPCLOSE\r\n","", x, y);
-    y = atcmd("AT+CIPSTART=\"TCP\",\"192.168.1.225\",2048\r\n", "OK", x, y);
-    if (y == 0) goto bailout;
-    y = atcmd("AT+CIPSEND=7\r\n", ">", x, y);
-    if (y == 0) goto bailout;
-    send("Hallo\r\n", 7);
-    readkeyboard();
-    while (!KEYDOWN(SPACE))
+    if (atcmd("\r\n", "ERROR", inbuf)) 
     {
-        t = readuarttx();
-        if (t & 1)
-        {
-            receive(inbuf);
-            print(inbuf, x, y); y++;    
-        }
-        readkeyboard();
+        print("Can't talk to esp", 0, y);
+        goto bailout;
     }
-    atcmd("AT+CIPCLOSE\r\n","OK", x, y);
-    /*
-    waitfordata();
-    print("Receiving", x, y); y++;
-    receive(inbuf);
-    print(inbuf, x, y); y++;    
-    */
+    atcmd("AT+CIPCLOSE\r\n", "", inbuf);
+    //if (atcmd("AT+CIPSTART=\"TCP\",\"192.168.1.225\",2048\r\n", "OK", inbuf)) 
+    if (atcmd("AT+CIPSTART=\"TCP\",\"DESKTOP-NAIUV3A\",2048\r\n", "OK", inbuf)) 
+    {
+        print("Unable to connect", 0, y);
+        goto bailout;
+    }
+    
+    // Check server version
+    cipxfer("Sync", 4, inbuf, &len, &dp);
+    y = printn(dp, len, x, y);
+    printnum(len, x, y); y++;
+
+    if (memcmp(dp, "NextSync1", 9) != 0)
+    {
+        print("Server version mismatch", 0, y);
+        goto closeconn;
+    }
+    
+    do
+    {
+        cipxfer("Next", 4, inbuf, &len, &dp);
+        filelen = (dp[0] << 8) | dp[1];
+        fnlen = dp[2];
+        memcpy(fn, dp+3, fnlen);
+        fn[fnlen] = 0;
+        if (*fn)
+        {
+            print("File:", 0, y);
+            y = print(fn, 5, y);
+            print("Size:", 0, y);
+            y = printnum(filelen, 5, y);
+            // todo: xfer            
+        }
+    }
+    while (*fn != 0);
+    
+closeconn:
+    y++;
+    if (atcmd("AT+CIPCLOSE\r\n", "OK", inbuf))
+    {
+        print("Close failed", 0, y);
+        goto bailout;
+    }
+    print("All done", 0, y);
 bailout:
     return;
 }
