@@ -29,6 +29,38 @@ extern void setupuart();
 extern unsigned short framecounter;
 extern char *cmdline;
 
+char memcmp(char *a, char *b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        char v = a[i] - b[i];
+        if (v != 0) return v;            
+        i++;
+    }
+    return 0;
+}
+
+void memset(char *a, char b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        a[i] = b;
+        i++;
+    }
+}
+
+void memcpy(char *a, char * b, unsigned short l)
+{
+    unsigned short i = 0;
+    while (i < l)
+    {
+        a[i] = b[i];
+        i++;
+    }
+}
+
 void drawchar(unsigned char c, unsigned char x, unsigned char y)
 {
     unsigned char i;
@@ -42,6 +74,29 @@ void drawchar(unsigned char c, unsigned char x, unsigned char y)
     }
 }
 
+void scrollup()
+{
+    unsigned char i, j;
+
+    for (i = 0; i < 16; i++)
+        for (j = 0; j < 8; j++)
+            memcpy((unsigned char*)yofs[i]+j*256, (unsigned char*)yofs[i+8]+j*256, 32);
+    for (i = 16; i < 24; i++)
+        for (j = 0; j < 8; j++)
+            memset((unsigned char*)yofs[i]+j*256, 0, 32);
+}
+
+unsigned char checkscroll(unsigned char y)
+{
+    // todo: if y == 24, scroll up
+    if (y >= 24)
+    {
+        scrollup();
+        y -= 8;
+    }
+    return y;
+}
+
 unsigned char print(char * t, unsigned char x, unsigned char y)
 {
     while (*t)
@@ -53,10 +108,12 @@ unsigned char print(char * t, unsigned char x, unsigned char y)
             x = 0;
             y++;
         }
-        // todo: if y == 24, scroll up
+        y = checkscroll(y);
         t++;
     }
-    return y + 1;
+    y++;
+    y = checkscroll(y);
+    return y;
 }
 
 unsigned char printn(char * t, char n, unsigned char x, unsigned char y)
@@ -70,28 +127,47 @@ unsigned char printn(char * t, char n, unsigned char x, unsigned char y)
             x = 0;
             y++;
         }
-        // todo: if y == 24, scroll up
+        y = checkscroll(y);
         t++;
         n--;
     }
-    return y + 1;
+    y++;
+    y = checkscroll(y);
+    return y;
 }
 
-unsigned char atoi(unsigned short v, char *b)
+unsigned char atoi(unsigned long v, char *b)
 {
-    unsigned short d = v;
-    unsigned char p = 0;
+    unsigned long d = v;
+    unsigned char dig = 0;
+    unsigned long tt[] = 
+    {
+        1000000000,
+        100000000,
+        10000000,
+        1000000,
+        100000,
+        10000,
+        1000,
+        100,
+        10,
+        1,
+        0
+    };
+    unsigned char p = 0;    
     b[p] = '0';
-    if (d >= 10000) { while (v >= 10000) { b[p]++; v -= 10000; } p++; b[p] = '0'; }
-    if (d >= 1000) { while (v >= 1000) { b[p]++; v -= 1000; } p++; b[p] = '0'; }
-    if (d >= 100) { while (v >= 100) { b[p]++; v -= 100; } p++; b[p] = '0'; }
-    if (d >= 10) { while (v >= 10) { b[p]++; v -= 10; } p++; b[p] = '0'; }
-    while (v >= 1) { b[p]++; v -= 1; } p++; 
+    do 
+    {
+        unsigned long t = tt[dig];
+        if (d >= t) { while (v >= t) { b[p]++; v -= t; } p++; b[p] = '0'; }        
+        dig++;
+    }  
+    while (tt[dig]>0);
     b[p] = 0;
     return p;
 }
 
-char printnum(unsigned short v, unsigned char x, unsigned char y)
+char printnum(unsigned long v, unsigned char x, unsigned char y)
 {
     char temp[6];
     atoi(v, temp);
@@ -149,37 +225,6 @@ void send(const char *b, unsigned char bytes)
     gPort254 = 0;
 }
 
-char memcmp(char *a, char *b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        char v = a[i] - b[i];
-        if (v != 0) return v;            
-        i++;
-    }
-    return 0;
-}
-
-void memset(char *a, char b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        a[i] = b;
-        i++;
-    }
-}
-
-void memcpy(char *a, char * b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        a[i] = b[i];
-        i++;
-    }
-}
 unsigned char strinstr(char *a, char *b)
 {
     if (!*b) return 1;
@@ -208,6 +253,7 @@ void bufinput(unsigned char *buf, unsigned short *len)
         if (t & 1)
         {
             ofs += receive(buf + ofs);
+            timeout = 1000;
         }
         else
         {
@@ -235,6 +281,7 @@ unsigned char atcmd(char *cmd, char *expect, char *buf)
             //print(buf, x, y);
             if (strinstr(buf, expect))
                 return 0;
+            timeout = 1000;
         }
         else
         {
@@ -276,12 +323,17 @@ void main()
     char inbuf[1024];
     char fn[128];
     unsigned char fnlen;
-    unsigned short filelen;
+    unsigned long filelen;
     unsigned char x, y;   
     unsigned char *dp;
     unsigned short len; 
+    unsigned char nextreg7;
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
+    
+    nextreg7 = readnextreg(0x07);
+    // writenextreg(0x07, 3); // 28MHz - doesn't work for some reason
+          
     x = 0;
     y = 0;
     
@@ -319,15 +371,17 @@ void main()
     do
     {
         cipxfer("Next", 4, inbuf, &len, &dp);
-        filelen = (dp[0] << 8) | dp[1];
-        fnlen = dp[2];
-        memcpy(fn, dp+3, fnlen);
+        filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];
+        fnlen = dp[4];
+        memcpy(fn, dp+5, fnlen);
         fn[fnlen] = 0;
         if (*fn)
         {
-            print("File:", 0, y);
+            y = print("File:", 0, y);
+            y--;
             y = print(fn, 5, y);
-            print("Size:", 0, y);
+            y = print("Size:", 0, y);
+            y--;
             y = printnum(filelen, 5, y);
             // todo: xfer            
         }
@@ -335,7 +389,8 @@ void main()
     while (*fn != 0);
     
 closeconn:
-    y++;
+    y+=2;
+    y = checkscroll(y);
     if (atcmd("AT+CIPCLOSE\r\n", "OK", inbuf))
     {
         print("Close failed", 0, y);
@@ -343,5 +398,6 @@ closeconn:
     }
     print("All done", 0, y);
 bailout:
+    writenextreg(0x07, nextreg7); // restore speed
     return;
 }

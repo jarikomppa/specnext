@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 
 import socket
+import glob
+import os
 
 PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
 VERSION = "NextSync1"
+
+def getFileList():
+    r = []
+    gf = glob.glob("*")
+    for g in gf:
+        if os.path.isfile(g) and os.path.exists(g):
+            stats = os.stat(g)
+            r.append([g, stats.st_size])
+    return r;
 
 print("NextSync server, protocol version "+VERSION)
 print("by Jari Komppa 2020")
@@ -26,7 +37,8 @@ while True:
         s.bind(("", PORT))
         s.listen()
         conn, addr = s.accept()
-        f = 2
+        f = getFileList()
+        fn = 0;
         with conn:
             print('Connected by', addr)
             working = True
@@ -41,13 +53,15 @@ while True:
                     conn.sendall(str.encode(VERSION))
                 else:
                     if data == b"Next":
-                        if f == 0:
+                        if fn >= len(f):
                             print("Nothing to sync")
-                            conn.sendall(b'\x00\x00\x00') # end of.
+                            conn.sendall(b'\x00\x00\x00\x00\x00') # end of.
                         else:
-                            print("testfiles..")
-                            f = f - 1;
-                            conn.sendall(b'\x12\x34\x10TestFilename.duh')
+                            print("file:", f[fn][0], "len:",f[fn][1])
+                            packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(f[fn][0])).to_bytes(1, byteorder="big") + f[fn][0].encode()
+                            #print(packet)
+                            conn.sendall(packet)
+                            fn+=1
                     else:
                         print("Unknown command")
                         conn.sendall(str.encode("Error"))
