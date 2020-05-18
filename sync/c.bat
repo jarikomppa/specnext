@@ -1,1 +1,2 @@
-@copy /y sync.dot d:\dot\sync
+@copy /y sync.dot server\dot\sync
+
