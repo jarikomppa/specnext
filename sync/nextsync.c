@@ -1,6 +1,9 @@
-/* * Part of Jari Komppa's zx spectrum suite * 
-https://github.com/jarikomppa/speccy * released under the unlicense, see 
-http://unlicense.org * (practically public domain) */
+/* 
+ * Part of Jari Komppa's zx spectrum next suite 
+ * https://github.com/jarikomppa/specnext
+ * released under the unlicense, see http://unlicense.org 
+ * (practically public domain) 
+ */
 
 #define HWIF_IMPLEMENTATION
 #include "hwif.c"
@@ -31,6 +34,19 @@ extern void memcpy(char *dest, const char *source, unsigned short count);
 extern unsigned short framecounter;
 extern char *cmdline;
 
+unsigned char parse_cmdline(char *f)
+{
+    unsigned char i;
+    i = 0;
+    while (cmdline && i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
+    {
+        f[i] = cmdline[i];
+        i++;
+    }
+    f[i] = 0;
+    return i;
+}
+
 char memcmp(char *a, char *b, unsigned short l)
 {
     unsigned short i = 0;
@@ -52,7 +68,6 @@ void memset(char *a, char b, unsigned short l)
         i++;
     }
 }
-
 
 void drawchar(unsigned char c, unsigned char x, unsigned char y)
 {
@@ -348,7 +363,11 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
 
 void main()
 { 
-    char inbuf[2048];
+                                        //1234567890123456789012
+    static const char *cipstart_prefix  = "AT+CIPSTART=\"TCP\",\"";
+    static const char *cipstart_postfix = "\",2048\r\n";
+    static const char *conffile         = "c:/sys/config/nextsync.cfg";
+    char inbuf[2048];    
     char fn[256];
     unsigned char fnlen;
     unsigned long filelen;
@@ -367,8 +386,44 @@ void main()
     x = 0;
     y = 0;
     
-    y = print("NextSync 0.1 by Jari Komppa", x, y);
+    y = print("NextSync 0.5 by Jari Komppa", x, y);
     y++;
+ 
+    len = parse_cmdline(fn);
+    if (*fn)
+    {
+        y = print("Setting server to:", 0, y);
+        y = print(fn, 0, y);
+        y = print("-> ", 0 , y); y--;
+        y = print((char*)conffile, 3, y);
+        filehandle = fopen((char*)conffile, 2 + 8); // write + open existing or create file
+        if (filehandle == 0)
+        {
+            y = print("Failed to open file", 0, y);
+            goto bailout;
+        }
+        fwrite(filehandle, fn, len);
+        fclose(filehandle);        
+        goto bailout;
+    }
+    filehandle = fopen((char*)conffile, 1);
+    if (filehandle == 0)
+    {           // 12345678901234567890123456789012
+        y = print("Server configuration not found.", 0, y);
+        y++; y = checkscroll(y);
+        y = print("Give server name or ip address", 0, y);
+        y = print("as a parameter to create the", 0, y);
+        y = print("server configuration.", 0, y);
+        y++; y = checkscroll(y);
+        y = print("(Running nextsync.py shows", 0, y);
+        y = print("both server name and the ip", 0, y);
+        y = print("address)", 0, y);
+        goto bailout;
+    }
+    len = fread(filehandle, fn, 255);
+    fclose(filehandle);
+    fn[len] = 0;
+ 
     // select esp uart
     writeuartctl(0); 
     // set the baud rate
@@ -379,16 +434,27 @@ void main()
         print("Can't talk to esp", 0, y);
         goto bailout;
     }
+
+    // Try disconnecting just in case.
     atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", inbuf);
+
+    y = print("Connecting to:", 0, y);
+    y = print(fn, 0, y);
+
+    memcpy(inbuf+1024, cipstart_prefix, 19);
+    memcpy(inbuf+1024+19, fn, len);
+    memcpy(inbuf+1024+19+len, cipstart_postfix, 8);
+
     //if (atcmd("AT+CIPSTART=\"TCP\",\"192.168.1.225\",2048\r\n", "OK", inbuf)) 
-    if (atcmd("AT+CIPSTART=\"TCP\",\"DESKTOP-NAIUV3A\",2048\r\n", "OK", inbuf)) 
+    //if (atcmd("AT+CIPSTART=\"TCP\",\"DESKTOP-NAIUV3A\",2048\r\n", "OK", inbuf)) 
+    if (atcmd(inbuf+1024, "OK", inbuf))
     {
         print("Unable to connect", 0, y);
         goto bailout;
     }
     
-    // Check server version
-    cipxfer("Sync", 4, inbuf, &len, &dp);
+    // Check server version/request protocol
+    cipxfer("Sync1", 5, inbuf, &len, &dp);
 
     if (memcmp(dp, "NextSync1", 9) != 0)
     {

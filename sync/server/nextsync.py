@@ -91,7 +91,7 @@ while True:
                     break
                 decoded = data.decode()
                 print(timestamp(), '| Data received: "' + decoded + '",',len(decoded), 'bytes')
-                if data == b"Sync":
+                if data == b"Sync1":
                     print(timestamp(), '| Sending "'+VERSION+'"')
                     conn.sendall(str.encode(VERSION))
                 else:
