@@ -419,35 +419,36 @@ retry:
             if (filehandle == 0)
             {
                 y = print("Unable to open file", 0, y);
-                goto closeconn;
             }
-            
-            do
-            {
-                unsigned char checksum = 0;
-                unsigned short i;
-                cipxfer("Get", 3, inbuf, &len, &dp);
-                for (i = 0; i < len - 1; i++)
-                    checksum ^= dp[i];
-                received += len - 1;
-                if (checksum == dp[len-1])
+            else
+            {            
+                do
                 {
-                    y = print("Xfer:", 0, y);
-                    y--;
-                    printnum(received, 5, y);
-                    fwrite(filehandle, dp, len-1);
-                }
-                else
-                {
-                    received = 0;
-                    cipxfer("Retry", 5, inbuf, &len, &dp);
-                    fclose(filehandle);
-                    goto retry;
-                }
-            } 
-            while (len > 1);
-            fclose(filehandle);
-            y++;
+                    unsigned char checksum = 0;
+                    unsigned short i;
+                    cipxfer("Get", 3, inbuf, &len, &dp);
+                    for (i = 0; i < len - 1; i++)
+                        checksum ^= dp[i];
+                    received += len - 1;
+                    if (checksum == dp[len-1])
+                    {
+                        y = print("Xfer:", 0, y);
+                        y--;
+                        printnum(received, 5, y);
+                        fwrite(filehandle, dp, len-1);
+                    }
+                    else
+                    {
+                        received = 0;
+                        cipxfer("Retry", 5, inbuf, &len, &dp);
+                        fclose(filehandle);
+                        goto retry;
+                    }
+                } 
+                while (len > 1);
+                fclose(filehandle);
+                y++;
+            }
         }
     }
     while (*fn != 0);
