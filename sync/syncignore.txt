@@ -1,4 +1,5 @@
 syncignore.txt
+syncpoint.dat
 *.rel
 *.sym
 *.bat
