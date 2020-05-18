@@ -169,7 +169,7 @@ unsigned char atoi(unsigned long v, char *b)
 
 char printnum(unsigned long v, unsigned char x, unsigned char y)
 {
-    char temp[6];
+    char temp[16];
     atoi(v, temp);
     return print(temp, x, y);    
 }
@@ -188,6 +188,7 @@ unsigned short receive(char *b)
 {
     unsigned char t;
     unsigned short count = 0;
+    unsigned short timeout = 100;
     do 
     {
         t = readuarttx();
@@ -197,9 +198,13 @@ unsigned short receive(char *b)
             gPort254 = *b & 7;
             b++;
             count++;
+            timeout = 100;
         }
+        // Without timeout it's possible we empty the uart and stop
+        // receiving before it's ready.
+        timeout--;
     }
-    while (t & 1);
+    while (timeout);
     *b = 0;
     gPort254 = 0;
     return count;
@@ -218,6 +223,7 @@ void send(const char *b, unsigned char bytes)
         while (t & 2);
         
         writeuarttx(*b);
+
         gPort254 = *b & 7;
         b++;
         bytes--;
@@ -225,10 +231,10 @@ void send(const char *b, unsigned char bytes)
     gPort254 = 0;
 }
 
-unsigned char strinstr(char *a, char *b)
+unsigned char strinstr(char *a, char *b, unsigned short len)
 {
     if (!*b) return 1;
-    while (*a)
+    while (len)
     {
         if (*a == *b)
         {
@@ -238,13 +244,14 @@ unsigned char strinstr(char *a, char *b)
                 return 1;
         }
         a++;
+        len--;
     }
     return 0;
 }
 
-void bufinput(unsigned char *buf, unsigned short *len)
+void bufinput(char *buf, char *expect, unsigned short *len)
 {
-    unsigned short timeout = 1000;
+    unsigned short timeout = 20000;
     unsigned char t;
     unsigned short ofs = 0;
     while (timeout)
@@ -253,19 +260,26 @@ void bufinput(unsigned char *buf, unsigned short *len)
         if (t & 1)
         {
             ofs += receive(buf + ofs);
-            timeout = 1000;
+            //printn(buf, ofs, 0, 10);
+            *len = ofs - 1;
+            if (strinstr(buf, expect, ofs))
+            {
+                return;
+            }
+            
+            timeout = 20000;
         }
         else
         {
             timeout--;
         }
     }    
-    *len = ofs - 1;
 }
 
 unsigned char atcmd(char *cmd, char *expect, char *buf)
 {
-    unsigned short timeout = 1000;
+    unsigned short len = 0;
+    unsigned short timeout = 20000;
     unsigned char t;
     unsigned char l = 0;
     while (cmd[l]) l++;
@@ -277,11 +291,11 @@ unsigned char atcmd(char *cmd, char *expect, char *buf)
         t = readuarttx();
         if (t & 1)
         {
-            receive(buf);
-            //print(buf, x, y);
-            if (strinstr(buf, expect))
+            len += receive(buf);
+            //printn(buf, len, 0, 10);
+            if (strinstr(buf, expect, len))
                 return 0;
-            timeout = 1000;
+            timeout = 20000;
         }
         else
         {
@@ -303,10 +317,9 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     cipsendcmd[p] = '\r'; p++;
     cipsendcmd[p] = '\n'; p++;
     send(cipsendcmd, p);
-    bufinput(output, len);
-    // todo: verify we have '>'
+    bufinput(output, ">", len);
     send(cmd, cmdlen);
-    bufinput(output, len);
+    bufinput(output, ":", len);
     l = *len;
     while (*output != ':') 
     {
@@ -332,7 +345,7 @@ void main()
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
     
     nextreg7 = readnextreg(0x07);
-    // writenextreg(0x07, 3); // 28MHz - doesn't work for some reason
+    writenextreg(0x07, 3); // 28MHz
           
     x = 0;
     y = 0;
@@ -344,12 +357,12 @@ void main()
     // set the baud rate
     setupuart();
 
-    if (atcmd("\r\n", "ERROR", inbuf)) 
+    if (atcmd("\r\n\r\n", "ERROR", inbuf)) 
     {
         print("Can't talk to esp", 0, y);
         goto bailout;
     }
-    atcmd("AT+CIPCLOSE\r\n", "", inbuf);
+    atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", inbuf);
     //if (atcmd("AT+CIPSTART=\"TCP\",\"192.168.1.225\",2048\r\n", "OK", inbuf)) 
     if (atcmd("AT+CIPSTART=\"TCP\",\"DESKTOP-NAIUV3A\",2048\r\n", "OK", inbuf)) 
     {
@@ -359,12 +372,12 @@ void main()
     
     // Check server version
     cipxfer("Sync", 4, inbuf, &len, &dp);
-    y = printn(dp, len, x, y);
-    printnum(len, x, y); y++;
 
     if (memcmp(dp, "NextSync1", 9) != 0)
     {
-        print("Server version mismatch", 0, y);
+        y = print("Server version mismatch", 0, y);
+        y = printn(dp, len, x, y);
+        y = printnum(len, x, y); y++;
         goto closeconn;
     }
     
