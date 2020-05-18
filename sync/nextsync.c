@@ -163,13 +163,20 @@ unsigned char atoi(unsigned long v, char *b)
     };
     unsigned char p = 0;    
     b[p] = '0';
-    do 
+    if (v != 0)
     {
-        unsigned long t = tt[dig];
-        if (d >= t) { while (v >= t) { b[p]++; v -= t; } p++; b[p] = '0'; }        
-        dig++;
-    }  
-    while (tt[dig]>0);
+        do 
+        {
+            unsigned long t = tt[dig];
+            if (d >= t) { while (v >= t) { b[p]++; v -= t; } p++; b[p] = '0'; }        
+            dig++;
+        }  
+        while (tt[dig] > 0);    
+    }
+    else
+    {
+        p++;
+    }
     b[p] = 0;
     return p;
 }
@@ -341,14 +348,16 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
 
 void main()
 { 
-    char inbuf[1024];
-    char fn[128];
+    char inbuf[2048];
+    char fn[256];
     unsigned char fnlen;
     unsigned long filelen;
+    unsigned long received;
     unsigned char x, y;   
     unsigned char *dp;
-    unsigned short len; 
+    unsigned short len;     
     unsigned char nextreg7;
+    char filehandle;
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
     
@@ -404,7 +413,41 @@ void main()
             y = print("Size:", 0, y);
             y--;
             y = printnum(filelen, 5, y);
-            // todo: xfer            
+            received = 0;
+retry:
+            filehandle = fopen(fn, 2 + 8); // write + open existing or create file
+            if (filehandle == 0)
+            {
+                y = print("Unable to open file", 0, y);
+                goto closeconn;
+            }
+            
+            do
+            {
+                unsigned char checksum = 0;
+                unsigned short i;
+                cipxfer("Get", 3, inbuf, &len, &dp);
+                for (i = 0; i < len - 1; i++)
+                    checksum ^= dp[i];
+                received += len - 1;
+                if (checksum == dp[len-1])
+                {
+                    y = print("Xfer:", 0, y);
+                    y--;
+                    printnum(received, 5, y);
+                    fwrite(filehandle, dp, len-1);
+                }
+                else
+                {
+                    received = 0;
+                    cipxfer("Retry", 5, inbuf, &len, &dp);
+                    fclose(filehandle);
+                    goto retry;
+                }
+            } 
+            while (len > 1);
+            fclose(filehandle);
+            y++;
         }
     }
     while (*fn != 0);
@@ -416,6 +459,11 @@ closeconn:
     {
         print("Close failed", 0, y);
         goto bailout;
+    }
+    if (y > 16)
+    {
+        scrollup();
+        y -= 8;
     }
     print("All done", 0, y);
 bailout:

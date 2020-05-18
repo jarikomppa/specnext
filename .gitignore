@@ -60,3 +60,4 @@ dkms.conf
 *.ihx
 *.lk
 zakplay/out/
+*.dat

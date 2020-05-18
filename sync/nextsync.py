@@ -80,6 +80,8 @@ while True:
         f = getFileList()
         print(timestamp(), '| Sync file list has', len(f), 'files.')
         fn = 0;
+        filedata = b''
+        fileofs = 0
         with conn:
             print(timestamp(), '| Connected by', addr[0], 'port', addr[1])
             working = True
@@ -103,9 +105,29 @@ while True:
                             packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(f[fn][0])).to_bytes(1, byteorder="big") + f[fn][0].encode()
                             #print(packet)
                             conn.sendall(packet)
-                            fn+=1
+                            with open(f[fn][0], 'rb') as srcfile:
+                                filedata = srcfile.read()
+                            fileofs = 0
+                            fn+=1                                                        
                     else:
-                        print(timestamp(), "| Unknown command")
-                        conn.sendall(str.encode("Error"))
+                        if data == b"Get":
+                            bytecount = 1024
+                            if bytecount + fileofs > len(filedata):
+                                bytecount = len(filedata) - fileofs
+                            checksum = 0
+                            for x in filedata[fileofs:fileofs+bytecount]:
+                                checksum ^= x
+                            packet = filedata[fileofs:fileofs+bytecount] + (checksum & 0xff).to_bytes(1, byteorder="big")
+                            conn.sendall(packet)
+                            print(timestamp(), "| Sending", bytecount, "bytes, offset", fileofs,"/",len(filedata), "checksum", (checksum & 0xff), "packet size", len(packet))
+                            fileofs += bytecount
+                        else:
+                            if data == b"Retry":
+                                print(timestamp(), "| Rewinding")
+                                conn.sendall(str.encode("Ok"))
+                                fileofs = 0
+                            else:
+                                print(timestamp(), "| Unknown command")
+                                conn.sendall(str.encode("Error"))
     print(timestamp(), "| Disconnected")
     print()
