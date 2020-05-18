@@ -43,6 +43,9 @@ if hostinfo[2] != []:
         print("    " + x)
 
 print()
+if not os.path.isfile(IGNOREFILE):
+    print("Warning! Ignore file "+IGNOREFILE+" not found in directory. All files will be synced.")
+    print()
 
 while True:
     print("NextSync listening to port", PORT)
