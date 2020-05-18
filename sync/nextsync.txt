@@ -1,0 +1,105 @@
+NextSync 0.5
+by Jari Komppa 2020
+http://iki.fi/sol
+
+
+
+NextSync provides a way to transfer files to the ZX Spectrum Next using
+the Next's WIFI module. While it is primarily designed to be a 
+development tool, it can be useful for non-developer users of the Next.
+
+NextSync consists of two parts: server running on a desktop machine
+and a "dot" command running on the next itself.
+
+The server is implemented in Python 3, and as such should work on any
+platform that runs Python (windows, mac, linux, bsd, probably your
+fridge).
+
+Setup:
+1.  Copy dot/sync from this distribution to your spectrum next sd card
+    (into the dot directory).
+
+2.  Copy the specnext.py to the directory on your machine which you
+    desire to represent the "root" of the next's filesystem (i.e, the
+    sd card). You may also want to copy the syncignore.txt.
+
+3.  Install python 3 if you don't have it (python.org)
+
+4.  Run the server specnext.py. It should show something like the
+    following:
+
+-- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
+NextSync server, protocol version NextSync1
+by Jari Komppa 2020
+
+Running on host: DESKTOP-NEW2020
+IP addresses:
+    192.168.56.1
+    192.168.1.225
+
+Note: Sync point file syncpoint.dat not found, syncing all files regardless of timestamp.
+Note: Ready to sync 0 files.
+
+2020-05-18 22:02:55 | NextSync listening to port 2048
+-- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
+
+5. Your operating system may ask if you want to let the server
+   use the network. Local area network access is sufficient.   
+   
+6. Make sure the wifi module is working on the next. If you've never
+   used it, run the /demos/esp/wifi.bas from the spectrum next sd card.
+   After setting up, you can try /demos/NXtel to see if you can 
+   connect somewhere. 
+
+7. Open next command line and type .sync and hit enter. It should complain
+   that the configuration file is missing.
+   
+8. Type .sync followed by either your server's host name or ip address.
+   Either should work. If more than one ip address is listed, it's possible
+   you are on several networks, or have installed VirtualBox or some other
+   thingy that creates virtual network interfaces. Use the one that's
+   in your local area network. If you use the wrong one, it doesn't matter,
+   it just won't work. You can always try the other one later.
+   
+9. Now you can type .sync without parameters and it should do the sync.
+
+10. Add/modify files to the server directory (or, more likely, a subdirectory)
+    and run .sync again. Note that you don't need to close the server.
+    
+11. The server only sends new files. To force sync of everything, delete
+    the syncpoint.dat file that the server creates.
+    
+12. To close the server, either just close its window, or hit control-break.
+    Control-c doesn't seem to work, at least in windows.
+    
+    
+    
+Troubleshooting:
+    - When in doubt, cold boot, close server and restart it.
+
+"Can't talk to esp" 
+    - the wifi module is not in its default bit rate. Try cold boot (completely
+      power off), or if you'd rather not, you can type
+      .uart -f
+      to reset the bit rate. To exit the '.uart' press symbol shift and space.
+      
+"Can't talk to esp fast"
+    - Shouldn't happen. Do a cold boot and try again.
+
+"Unable to connect"
+    - Is the server running?
+    - Is the server ip/name correct?
+    - Is the server on the same network?
+    - Is the next's wifi configured to be on the same network?
+    - The server name is stored in c:/sys/config/nextsync.cfg
+
+"Server version mismatch"
+    - Use the same version of server and .sync
+
+"Unable to open file"
+    - Can happen if you're trying to sync sync itself, or if the files are open
+      otherwise, write protected or broken or something else went wrong.
+
+"Close failed"
+    - Server probably closed the connection. Shouldn't happen.
+    
