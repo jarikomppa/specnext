@@ -1,0 +1,17 @@
+syncignore.txt
+*.rel
+*.sym
+*.bat
+*.lst
+*.ihx
+*.lk
+*.bak
+*.exe
+*.py
+*.map
+*.noi
+*.s
+*.c
+*.asm
+*.png
+*.h
