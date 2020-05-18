@@ -26,6 +26,8 @@ extern void writeuartctl(unsigned char val);
 extern unsigned char readuartctl();
 extern void setupuart();
 
+extern void memcpy(char *dest, const char *source, unsigned short count);
+
 extern unsigned short framecounter;
 extern char *cmdline;
 
@@ -51,15 +53,6 @@ void memset(char *a, char b, unsigned short l)
     }
 }
 
-void memcpy(char *a, char * b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        a[i] = b[i];
-        i++;
-    }
-}
 
 void drawchar(unsigned char c, unsigned char x, unsigned char y)
 {
@@ -79,11 +72,25 @@ void scrollup()
     unsigned char i, j;
 
     for (i = 0; i < 16; i++)
+    {
+        unsigned char* src = (unsigned char*)yofs[i+8];
+        unsigned char* dst = (unsigned char*)yofs[i];
         for (j = 0; j < 8; j++)
-            memcpy((unsigned char*)yofs[i]+j*256, (unsigned char*)yofs[i+8]+j*256, 32);
+        {
+            memcpy(dst, src, 32);
+            src += 256;
+            dst += 256;
+        }
+    }
     for (i = 16; i < 24; i++)
+    {
+        unsigned char* dst = (unsigned char*)yofs[i];
         for (j = 0; j < 8; j++)
-            memset((unsigned char*)yofs[i]+j*256, 0, 32);
+        {
+            memset(dst, 0, 32);
+            dst += 256;
+        }
+    }
 }
 
 unsigned char checkscroll(unsigned char y)
@@ -188,7 +195,7 @@ unsigned short receive(char *b)
 {
     unsigned char t;
     unsigned short count = 0;
-    unsigned short timeout = 100;
+    unsigned short timeout = 100; // TODO: figure out how low we can go with this reliably
     do 
     {
         t = readuarttx();
@@ -249,7 +256,7 @@ unsigned char strinstr(char *a, char *b, unsigned short len)
     return 0;
 }
 
-void bufinput(char *buf, char *expect, unsigned short *len)
+char bufinput(char *buf, char *expect, unsigned short *len)
 {
     unsigned short timeout = 20000;
     unsigned char t;
@@ -264,7 +271,7 @@ void bufinput(char *buf, char *expect, unsigned short *len)
             *len = ofs - 1;
             if (strinstr(buf, expect, ofs))
             {
-                return;
+                return 0;
             }
             
             timeout = 20000;
@@ -274,6 +281,7 @@ void bufinput(char *buf, char *expect, unsigned short *len)
             timeout--;
         }
     }    
+    return 1;
 }
 
 unsigned char atcmd(char *cmd, char *expect, char *buf)
@@ -317,9 +325,9 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     cipsendcmd[p] = '\r'; p++;
     cipsendcmd[p] = '\n'; p++;
     send(cipsendcmd, p);
-    bufinput(output, ">", len);
+    bufinput(output, ">", len); // cipsend prompt
     send(cmd, cmdlen);
-    bufinput(output, ":", len);
+    if (bufinput(output, ":", len)) return; // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
     l = *len;
     while (*output != ':') 
     {

@@ -33,6 +33,7 @@ assert sys.version_info >= (3, 0)
 src = [
     "+cls",
 	"crt0.s",
+    "std.s",
 	"esxdos.s",
 	"uart.s",
 	"nextsync.c"
