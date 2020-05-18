@@ -27,7 +27,7 @@ extern void writeuartrx(unsigned char val);
 extern unsigned char readuartrx();
 extern void writeuartctl(unsigned char val);
 extern unsigned char readuartctl();
-extern void setupuart();
+extern void setupuart(unsigned char rateindex) __z88dk_fastcall;
 
 extern void memcpy(char *dest, const char *source, unsigned short count);
 
@@ -217,7 +217,7 @@ unsigned short receive(char *b)
 {
     unsigned char t;
     unsigned short count = 0;
-    unsigned short timeout = 100; // TODO: figure out how low we can go with this reliably
+    unsigned short timeout = 100; 
     do 
     {
         t = readuarttx();
@@ -227,7 +227,7 @@ unsigned short receive(char *b)
             gPort254 = *b & 7;
             b++;
             count++;
-            timeout = 100;
+            timeout = 100; // TODO: figure out how low we can go with this reliably
         }
         // Without timeout it's possible we empty the uart and stop
         // receiving before it's ready.
@@ -406,6 +406,7 @@ void main()
         fclose(filehandle);        
         goto bailout;
     }
+
     filehandle = fopen((char*)conffile, 1);
     if (filehandle == 0)
     {           // 12345678901234567890123456789012
@@ -427,13 +428,21 @@ void main()
     // select esp uart
     writeuartctl(0); 
     // set the baud rate
-    setupuart();
+    setupuart(0);
 
     if (atcmd("\r\n\r\n", "ERROR", inbuf)) 
     {
         print("Can't talk to esp", 0, y);
         goto bailout;
     }
+    
+    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", inbuf);
+    setupuart(12);
+    if (atcmd("\r\n\r\n", "ERROR", inbuf))
+    {
+        print("Can't talk to esp fast", 0, y);
+        goto bailout;
+    }   
 
     // Try disconnecting just in case.
     atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", inbuf);
@@ -445,8 +454,6 @@ void main()
     memcpy(inbuf+1024+19, fn, len);
     memcpy(inbuf+1024+19+len, cipstart_postfix, 8);
 
-    //if (atcmd("AT+CIPSTART=\"TCP\",\"192.168.1.225\",2048\r\n", "OK", inbuf)) 
-    //if (atcmd("AT+CIPSTART=\"TCP\",\"DESKTOP-NAIUV3A\",2048\r\n", "OK", inbuf)) 
     if (atcmd(inbuf+1024, "OK", inbuf))
     {
         print("Unable to connect", 0, y);
@@ -524,7 +531,7 @@ closeconn:
     y = checkscroll(y);
     if (atcmd("AT+CIPCLOSE\r\n", "OK", inbuf))
     {
-        print("Close failed", 0, y);
+        y=print("Close failed", 0, y);
         goto bailout;
     }
     if (y > 16)
@@ -532,8 +539,9 @@ closeconn:
         scrollup();
         y -= 8;
     }
-    print("All done", 0, y);
+    y=print("All done", 0, y);
 bailout:
+    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", inbuf);
     writenextreg(0x07, nextreg7); // restore speed
     return;
 }

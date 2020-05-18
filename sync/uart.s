@@ -7,12 +7,12 @@
 	.globl _readuartctl
 	.globl _setupuart
 	.area _CODE
-	
-	
-;extern void setupuart();
+
+
+; Snippet based on code from uart22e.asm by Tim Gilberts, Victor Trucco and Jim Bagley
+;extern void setupuart(unsigned char rateindex) __z88dk_fastcall
 _setupuart::
-; todo: set A to desired baud rate thingy
-set_baud_115200:	XOR A
+            ld a, l
 			
 ;Now we calculate the prescaler value to set for our VGA timing.
 		
@@ -62,7 +62,6 @@ set_baud_115200:	XOR A
 			ret
 
 BaudPrescale:
-
 	.dw 243,248,256,260,269,278,286,234 ; Was 0 - 115200 adjust for 0-7
 	.dw 486,496,512,521,538,556,573,469 ; 56k
 	.dw 729,744,767,781,807,833,859,703 ; 38k
