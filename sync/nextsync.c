@@ -396,7 +396,7 @@ void main()
         y = print(fn, 0, y);
         y = print("-> ", 0 , y); y--;
         y = print((char*)conffile, 3, y);
-        filehandle = fopen((char*)conffile, 2 + 8); // write + open existing or create file
+        filehandle = fopen((char*)conffile, 2 + 0x0c); // write + create new file, delete existing
         if (filehandle == 0)
         {
             y = print("Failed to open file", 0, y);
@@ -407,7 +407,7 @@ void main()
         goto bailout;
     }
 
-    filehandle = fopen((char*)conffile, 1);
+    filehandle = fopen((char*)conffile, 1); // read + open existing
     if (filehandle == 0)
     {           // 12345678901234567890123456789012
         y = print("Server configuration not found.", 0, y);
@@ -488,7 +488,7 @@ void main()
             y = printnum(filelen, 5, y);
             received = 0;
 retry:
-            filehandle = fopen(fn, 2 + 8); // write + open existing or create file
+            filehandle = fopen(fn, 2 + 0x0c); // write + create new file, delete existing
             if (filehandle == 0)
             {
                 y = print("Unable to open file", 0, y);
