@@ -1,18 +1,12 @@
-		;;	crt0.c
-		;;	zx spectrum ram startup code
-		;;
-		;;	tomaz stih sun may 20 2012
 		.module crt0
 		.globl _heap
 		.globl _cmdline
 
 		.area _HEADER(ABS)
 	
-		di				; no rom anymore
+		di
 
         ld (_cmdline),hl 
-		ld (#store_sp),sp		; store SP
-		ld sp,#16384
 
 		;; store all regs
 		push af
@@ -27,12 +21,49 @@
 		push bc
 		push de
 		push hl
+		ld (#store_sp),sp		; store SP
+
+        ld      hl, #0x0001 ; alloc zx memory
+        exx                             ; place parameters in alternates
+        ld      de, #0x01bd             ; IDE_BANK
+        ld      c, #7                   ; "usually 7, but 0 for some calls"
+        rst     #0x8
+        .db     #0x94                   ; +3dos call
+    	jr      nc, allocfail
+        ld      (_pagehandle),de
+
+    	ld	    a,      #0x57 ; nextreg
+        ld      bc,     #0x243B   ; nextreg select
+        out     (c),    a
+        inc     b                 ; nextreg i/o
+        in      a,      (c)
+        ld      (_mmu7), a
+        ld      a, (_pagehandle)
+        out     (c),     a
+
+		ld sp, #0xffff
 
 		call gsinit			; init static vars (sdcc style)
 
 		;; start the os
 		call _main			
 
+    	ld	    a,      #0x57 ; nextreg
+        ld      bc,     #0x243B   ; nextreg select
+        out     (c),    a
+        inc     b                 ; nextreg i/o
+        ld      a, (_mmu7)
+        out     (c),     a
+
+    	ld	    de, (_pagehandle)       ; page
+        ld      hl, #0x0003             ; free zx memory
+        exx                             ; place parameters in alternates
+        ld      de, #0x01bd             ; IDE_BANK
+        ld      c, #7                   ; "usually 7, but 0 for some calls"
+        rst     #0x8
+        .db     #0x94                   ; +3dos call
+allocfail:	
+		ld sp,(#store_sp)		; restore original SP
 		;; restore all regs
 		pop hl
 		pop de
@@ -47,12 +78,13 @@
 		pop bc
 		pop af
 
-		ld sp,(#store_sp)		; restore original SP
 		
-		ei				; the rom is back
+		ei
 		ret	
 store_sp:	.word 252
 _cmdline:   .word 0
+_pagehandle: .word 0
+_mmu7: .db 0
 
 		;;	(linker documentation:) where specific ordering is desired - 
 		;;	the first linker input file should have the area definitions 
