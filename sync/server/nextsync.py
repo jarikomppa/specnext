@@ -32,8 +32,8 @@ def getFileList():
         with open(IGNOREFILE) as f:
             ignorelist = f.read().splitlines()
     r = []
-    gf = glob.glob("*")
-    for g in gf:        
+    gf = glob.glob("**", recursive=True)
+    for g in gf:
         if os.path.isfile(g) and os.path.exists(g):
             ignored = False
             for i in ignorelist:
@@ -101,8 +101,9 @@ while True:
                             conn.sendall(b'\x00\x00\x00\x00\x00') # end of.
                             touch(SYNCPOINT) # Sync complete, set sync point
                         else:
-                            print(timestamp(), "| File:", f[fn][0], "length:",f[fn][1])
-                            packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(f[fn][0])).to_bytes(1, byteorder="big") + f[fn][0].encode()
+                            specfn = '/' + f[fn][0].replace('\\','/')
+                            print(timestamp(), "| File:", f[fn][0], "(as " + specfn + ") length:",f[fn][1])
+                            packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
                             #print(packet)
                             conn.sendall(packet)
                             with open(f[fn][0], 'rb') as srcfile:
