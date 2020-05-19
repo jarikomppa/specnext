@@ -22,6 +22,9 @@ Setup:
 2.  Copy the specnext.py to the directory on your machine which you
     desire to represent the "root" of the next's filesystem (i.e, the
     sd card). You may also want to copy the syncignore.txt.
+    syncignore.txt contains filenames and file masks you don't want
+    to sync. The default ignores .bak files as well as the server
+    itself.    
 
 3.  Install python 3 if you don't have it (python.org)
 
