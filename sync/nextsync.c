@@ -357,8 +357,8 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
         l--;
     }
     output++;
-    *dataptr = output;
-    *len = l;
+    *dataptr = output + 2;
+    *len = l - 2;
 }
 
 void main()
@@ -386,7 +386,7 @@ void main()
     x = 0;
     y = 0;
     
-    y = print("NextSync 0.5 by Jari Komppa", x, y);
+    y = print("NextSync 0.6 by Jari Komppa", x, y);
     y++;
  
     len = parse_cmdline(fn);
@@ -461,9 +461,9 @@ void main()
     }
     
     // Check server version/request protocol
-    cipxfer("Sync1", 5, inbuf, &len, &dp);
+    cipxfer("Sync2", 5, inbuf, &len, &dp);
 
-    if (memcmp(dp, "NextSync1", 9) != 0)
+    if (memcmp(dp, "NextSync2", 9) != 0)
     {
         y = print("Server version mismatch", 0, y);
         y = printn(dp, len, x, y);
@@ -487,7 +487,6 @@ void main()
             y--;
             y = printnum(filelen, 5, y);
             received = 0;
-retry:
             filehandle = fopen(fn, 2 + 0x0c); // write + create new file, delete existing
             if (filehandle == 0)
             {
@@ -497,28 +496,33 @@ retry:
             {            
                 do
                 {
-                    unsigned char checksum = 0;
+                    unsigned char checksum1 = 0;
+                    unsigned char checksum2 = 0;
                     unsigned short i;
                     cipxfer("Get", 3, inbuf, &len, &dp);
-                    for (i = 0; i < len - 1; i++)
-                        checksum ^= dp[i];
-                    received += len - 1;
-                    if (checksum == dp[len-1])
+retry:
+                    for (i = 0; i < len - 2; i++)
                     {
+                        checksum1 ^= dp[i];
+                        checksum2 += checksum1;
+                    }
+
+                    if (checksum1 == dp[len-2] &&
+                        checksum2 == dp[len-1])
+                    {
+                        received += len - 2;
                         y = print("Xfer:", 0, y);
                         y--;
                         printnum(received, 5, y);
-                        fwrite(filehandle, dp, len-1);
+                        fwrite(filehandle, dp, len-2);
                     }
                     else
                     {
-                        received = 0;
                         cipxfer("Retry", 5, inbuf, &len, &dp);
-                        fclose(filehandle);
                         goto retry;
                     }
                 } 
-                while (len > 1);
+                while (len > 2);
                 fclose(filehandle);
                 y++;
             }
