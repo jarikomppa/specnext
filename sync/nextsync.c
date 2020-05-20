@@ -127,12 +127,20 @@ unsigned char print(char * t, unsigned char x, unsigned char y)
 {
     while (*t)
     {
-        drawchar(*t, x, y);
-        x++;
-        if (x == 32)
+        if (*t == '\n')
         {
             x = 0;
             y++;
+        }
+        else
+        {
+            drawchar(*t, x, y);
+            x++;
+            if (x == 32)
+            {
+                x = 0;
+                y++;
+            }
         }
         y = checkscroll(y);
         t++;
@@ -204,29 +212,6 @@ void flush_uart()
         readuartrx();
     }
 } 
-
-/*
-unsigned short receive(char *b)
-{
-    unsigned char t = 0;
-    unsigned short count = 0;
-    do 
-    {
-        t = readuarttx();
-        if (t & 1)
-        {
-            *b = readuartrx();
-            gPort254 = *b & 7;
-            b++;
-            count++;
-        }
-    }
-    while (t & 1);
-    *b = 0;
-    gPort254 = 0;
-    return count;
-}
-*/
 
 void send(const char *b, unsigned char bytes)
 {
@@ -336,13 +321,13 @@ unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
 void noconfig()
 {
         // 12345678901234567890123456789012
-    print("Server configuration not found.", 0, 3);   
-    print("Give server name or ip address  "
-          "as a parameter to create the    "
-          "server configuration.", 0, 5);    
-    print("(Running nextsync.py shows      "
-          "both server name and the ip     "
-          "address)", 0, 9);
+    print("Server configuration not found.\n\n"
+          "Give server name or ip address\n"
+          "as a parameter to create the\n"
+          "server configuration.\n\n"
+          "(Running nextsync.py shows\n"
+          "both server name and the ip\n"
+          "address)", 0, 3);
 }
 
 void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
@@ -384,20 +369,11 @@ void flush_uart_hard()
 
 char gofast(char *inbuf, char y)
 {
-    //char x;
     atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
     setupuart(12);
     flush_uart_hard();
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf))
     {
-        /*
-        for (x = 0; x < 32; x++)
-        {
-            drawchar(inbuf[x],x,0);
-            drawchar(inbuf[x+32],x,1);
-            drawchar(inbuf[x+64],x,2);
-        }
-        */
         print("Can't talk to esp fast", 0, y);
         return 1;
     }     
@@ -431,27 +407,11 @@ retry:
                 checksum1 ^= dp[i];
                 checksum2 += checksum1;
             }
-/*
-            print("      ", 0, 0);
-            printnum(len, 0, 0);
-
-            print("  ", 30, 0);
-            printnum(checksum1, 29, 0);
-            print("  ", 30, 1);
-            printnum(checksum2, 29, 1);
-
-            print("  ", 30, 2);
-            printnum(dp[len-2], 29, 2);
-            print("  ", 30, 3);
-            printnum(dp[len-1], 29, 3);
-*/                 
 
             if (checksum1 == dp[len-2] &&
                 checksum2 == dp[len-1])
             {
                 received += len - 2;
-                y = print("Xfer:", 0, y);
-                y--;
                 printnum(received, 5, y);
                 fwrite(filehandle, dp, len-2);
             }
@@ -475,7 +435,7 @@ void main()
     char fn[256];
     unsigned char fnlen;
     unsigned long filelen;
-    unsigned char x, y;   
+    unsigned char y;   
     unsigned char *dp;
     unsigned short len;     
     unsigned char nextreg7;
@@ -486,10 +446,9 @@ void main()
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
           
-    x = 0;
     y = 0;
     
-    y = print("NextSync 0.6 by Jari Komppa", x, y);
+    y = print("NextSync 0.6 by Jari Komppa", 0, y);
     y++;
  
     len = parse_cmdline(fn);
@@ -542,7 +501,7 @@ void main()
 
     memcpy(inbuf+1024, cipstart_prefix, 19);
     memcpy(inbuf+1024+19, fn, len);
-    memcpy(inbuf+1024+19+len, cipstart_postfix, 9);
+    memcpy(inbuf+1024+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
 
     if (atcmd(inbuf+1024, "OK", 2, inbuf))
     {
@@ -557,8 +516,8 @@ void main()
     {
         y = print("Server version mismatch", 0, y);
         dp[len] = 0;
-        y = print(dp, x, y);
-        y = printnum(len, x, y); y++;
+        y = print(dp, 0, y);
+        y = printnum(len, 0, y); y++;
         goto closeconn;
     }
     
@@ -572,14 +531,11 @@ void main()
         fn[fnlen] = 0;
         if (*fn)
         {
-            y = print("File:", 0, y);
-            y--;
-            y = print(fn, 5, y);
-            y = print("Size:", 0, y);
-            y--;
-            y = printnum(filelen, 5, y);
-            transfer(fn, inbuf, y);
-            y++;
+            y = print("File:\nSize:\nXfer:", 0, y);
+            print(fn, 5, y-3);
+            printnum(filelen, 5, y-2);
+            transfer(fn, inbuf, y-1);
+            y = checkscroll(y);
         }
     }
     while (*fn != 0);
@@ -600,6 +556,10 @@ closeconn:
     print("All done", 0, y);
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
+    /*
+    memset((unsigned char*)yofs[0]+192*32,56,24*32);
+    gPort254 = 7;
+    */
     writenextreg(0x07, nextreg7); // restore speed
     return;
 }
