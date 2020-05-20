@@ -5,11 +5,14 @@
  * (practically public domain) 
  */
 
-#define HWIF_IMPLEMENTATION
-#include "hwif.c"
-
 #include "yofstab.h"
 #include "fona.h"
+
+#define TIMEOUT 60000
+
+// xxxsmbbb
+// where b = border color, m is mic, s is speaker
+__sfr __at 0xfe gPort254;
 
 extern unsigned char fopen(unsigned char *fn, unsigned char mode);
 extern void fclose(unsigned char handle);
@@ -28,6 +31,7 @@ extern unsigned char readuartrx();
 extern void writeuartctl(unsigned char val);
 extern unsigned char readuartctl();
 extern void setupuart(unsigned char rateindex) __z88dk_fastcall;
+extern unsigned short receive(char *b);
 
 extern void memcpy(char *dest, const char *source, unsigned short count);
 
@@ -138,27 +142,7 @@ unsigned char print(char * t, unsigned char x, unsigned char y)
     return y;
 }
 
-unsigned char printn(char * t, char n, unsigned char x, unsigned char y)
-{
-    while (n)
-    {
-        drawchar(*t, x, y);
-        x++;
-        if (x == 32)
-        {
-            x = 0;
-            y++;
-        }
-        y = checkscroll(y);
-        t++;
-        n--;
-    }
-    y++;
-    y = checkscroll(y);
-    return y;
-}
-
-unsigned char atoi(unsigned long v, char *b)
+unsigned char uitoa(unsigned long v, char *b)
 {
     unsigned long d = v;
     unsigned char dig = 0;
@@ -199,7 +183,7 @@ unsigned char atoi(unsigned long v, char *b)
 char printnum(unsigned long v, unsigned char x, unsigned char y)
 {
     char temp[16];
-    atoi(v, temp);
+    uitoa(v, temp);
     return print(temp, x, y);    
 }
 
@@ -213,11 +197,19 @@ void waitfordata()
     while (!(t & 1));
 }
 
+void flush_uart()
+{
+    while (readuarttx() & 1)
+    {
+        readuartrx();
+    }
+} 
+
+/*
 unsigned short receive(char *b)
 {
-    unsigned char t;
+    unsigned char t = 0;
     unsigned short count = 0;
-    unsigned short timeout = 100; 
     do 
     {
         t = readuarttx();
@@ -227,17 +219,14 @@ unsigned short receive(char *b)
             gPort254 = *b & 7;
             b++;
             count++;
-            timeout = 100; // TODO: figure out how low we can go with this reliably
         }
-        // Without timeout it's possible we empty the uart and stop
-        // receiving before it's ready.
-        timeout--;
     }
-    while (timeout);
+    while (t & 1);
     *b = 0;
     gPort254 = 0;
     return count;
 }
+*/
 
 void send(const char *b, unsigned char bytes)
 {
@@ -278,30 +267,44 @@ unsigned char strinstr(char *a, char *b, unsigned short len)
     return 0;
 }
 
-char bufinput(char *buf, char *expect, unsigned short *len)
+char bufinput(char *buf, unsigned short *len)
 {
-    unsigned short timeout = 20000;
-    unsigned char t;
+    unsigned short timeout = TIMEOUT;
     unsigned short ofs = 0;
+    unsigned short b;
+    unsigned short i = 0;
+    unsigned short hdr = 0;
+    unsigned short destsize = 0xfff;
     while (timeout)
     {
-        t = readuarttx();
-        if (t & 1)
+        b = receive(buf + ofs);
+        ofs += b;
+        if (b) timeout = TIMEOUT;
+        for (; i < ofs; i++)
         {
-            ofs += receive(buf + ofs);
-            //printn(buf, ofs, 0, 10);
-            *len = ofs - 1;
-            if (strinstr(buf, expect, ofs))
+            if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
             {
-                return 0;
+                while (timeout)
+                {
+                    b = receive(buf + ofs);
+                    ofs += b;
+                    if (ofs >= destsize)
+                    {
+                        *len = hdr;
+                        return 0;
+                    }
+                    if (b) timeout = TIMEOUT;
+                    if (ofs > i + 2)
+                    {
+                        hdr = ((buf[i+1]<<8) | buf[i+2]);
+                        destsize = hdr + i + 1;
+                    }
+                    timeout--;
+                }
             }
-            
-            timeout = 20000;
-        }
-        else
-        {
-            timeout--;
-        }
+        }        
+        
+        timeout--;
     }    
     return 1;
 }
@@ -309,69 +312,163 @@ char bufinput(char *buf, char *expect, unsigned short *len)
 unsigned char atcmd(char *cmd, char *expect, char *buf)
 {
     unsigned short len = 0;
-    unsigned short timeout = 20000;
-    unsigned char t;
+    unsigned short b = 0;
+    unsigned short timeout = TIMEOUT;
     unsigned char l = 0;
+        
     while (cmd[l]) l++;
-    send(cmd, l);
-    readkeyboard();
 
-    while (timeout && !KEYDOWN(SPACE))
+    flush_uart();
+    send(cmd, l);
+
+    while (timeout)
     {        
-        t = readuarttx();
-        if (t & 1)
-        {
-            len += receive(buf);
-            //printn(buf, len, 0, 10);
-            if (strinstr(buf, expect, len))
-                return 0;
-            timeout = 20000;
-        }
-        else
-        {
-            timeout--;
-        }
-        readkeyboard();
+        b = receive(buf + len);
+        len += b;
+        if (b) timeout = TIMEOUT;
+        timeout--;
+        if (strinstr(buf, expect, len))
+            return 0;
     }    
     return 1;
 }
 
+void noconfig()
+{
+        // 12345678901234567890123456789012
+    print("Server configuration not found.", 0, 3);   
+    print("Give server name or ip address  "
+          "as a parameter to create the    "
+          "server configuration.", 0, 5);    
+    print("(Running nextsync.py shows      "
+          "both server name and the ip     "
+          "address)", 0, 9);
+}
 
 void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
     const char *cccmd="AT+CIPSEND=12345\r\n";
     char *cipsendcmd=(char*)cccmd;
     char p = 11;
-    unsigned short l = cmdlen;
-    p += atoi(cmdlen, cipsendcmd+p);
+    p += uitoa(cmdlen, cipsendcmd + p);
     cipsendcmd[p] = '\r'; p++;
-    cipsendcmd[p] = '\n'; p++;
-    send(cipsendcmd, p);
-    bufinput(output, ">", len); // cipsend prompt
+    cipsendcmd[p] = '\n'; 
+    atcmd(cipsendcmd, ">", output); // cipsend prompt
+    *len = 0;
     send(cmd, cmdlen);
-    if (bufinput(output, ":", len)) return; // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
-    l = *len;
+    if (bufinput(output, len)) return;
+    
     while (*output != ':') 
     {
         output++;
-        l--;
     }
-    output++;
-    *dataptr = output + 2;
-    *len = l - 2;
+    //output++;
+    *dataptr = output + 2 + 1; // skip size bytes
+    *len -= 2; // reduce size bytes    
+}
+
+char gofast(char *inbuf, char y)
+{
+    unsigned short timeout = TIMEOUT;
+    //char x;
+    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", inbuf);
+    setupuart(12);
+    while (timeout)
+    {
+        if (readuarttx() & 1)
+        {
+            readuartrx();
+            timeout = TIMEOUT;
+        }
+        timeout--;
+    }
+    if (atcmd("\r\n\r\n", "ERROR", inbuf))
+    {
+        /*
+        for (x = 0; x < 32; x++)
+        {
+            drawchar(inbuf[x],x,0);
+            drawchar(inbuf[x+32],x,1);
+            drawchar(inbuf[x+64],x,2);
+        }
+        */
+        print("Can't talk to esp fast", 0, y);
+        return 1;
+    }     
+    return 0;
+}
+
+void transfer(char *fn, char *inbuf, char y)
+{
+    unsigned char *dp;
+    unsigned long received = 0;
+    unsigned short len;
+    unsigned char filehandle;
+    filehandle = fopen(fn, 2 + 0x0c); // write + create new file, delete existing
+    if (filehandle == 0)
+    {
+        y = print("Unable to open file", 0, y);
+    }
+    else
+    {            
+        do
+        {
+            unsigned char checksum1;
+            unsigned char checksum2;
+            unsigned short i;
+            cipxfer("Get", 3, inbuf, &len, &dp);
+retry:
+            checksum1 = 0;
+            checksum2 = 0;
+            for (i = 0; i < len - 2; i++)
+            {
+                checksum1 ^= dp[i];
+                checksum2 += checksum1;
+            }
+/*
+            print("      ", 0, 0);
+            printnum(len, 0, 0);
+
+            print("  ", 30, 0);
+            printnum(checksum1, 29, 0);
+            print("  ", 30, 1);
+            printnum(checksum2, 29, 1);
+
+            print("  ", 30, 2);
+            printnum(dp[len-2], 29, 2);
+            print("  ", 30, 3);
+            printnum(dp[len-1], 29, 3);
+*/                 
+
+            if (checksum1 == dp[len-2] &&
+                checksum2 == dp[len-1])
+            {
+                received += len - 2;
+                y = print("Xfer:", 0, y);
+                y--;
+                printnum(received, 5, y);
+                fwrite(filehandle, dp, len-2);
+            }
+            else
+            {
+                cipxfer("Retry", 5, inbuf, &len, &dp);
+                goto retry;
+            }
+        } 
+        while (len > 2);
+        fclose(filehandle);
+    }
 }
 
 void main()
-{ 
-                                        //1234567890123456789012
-    static const char *cipstart_prefix  = "AT+CIPSTART=\"TCP\",\"";
-    static const char *cipstart_postfix = "\",2048\r\n";
-    static const char *conffile         = "c:/sys/config/nextsync.cfg";
-    char inbuf[2048];    
+{                                 //1234567890123456789012
+    const char *cipstart_prefix  = "AT+CIPSTART=\"TCP\",\"";
+    const char *cipstart_postfix = "\",2048\r\n";
+    const char *conffile         = "c:/sys/config/nextsync.cfg";
+    char inbuf[4096];    
     char fn[256];
     unsigned char fnlen;
     unsigned long filelen;
-    unsigned long received;
     unsigned char x, y;   
     unsigned char *dp;
     unsigned short len;     
@@ -408,25 +505,17 @@ void main()
     }
 
     filehandle = fopen((char*)conffile, 1); // read + open existing
-    if (filehandle == 0)
-    {           // 12345678901234567890123456789012
-        y = print("Server configuration not found.", 0, y);
-        y++; y = checkscroll(y);
-        y = print("Give server name or ip address", 0, y);
-        y = print("as a parameter to create the", 0, y);
-        y = print("server configuration.", 0, y);
-        y++; y = checkscroll(y);
-        y = print("(Running nextsync.py shows", 0, y);
-        y = print("both server name and the ip", 0, y);
-        y = print("address)", 0, y);
+    if (filehandle == 0)        
+    {
+        noconfig();
         goto bailout;
     }
     len = fread(filehandle, fn, 255);
     fclose(filehandle);
     fn[len] = 0;
  
-    // select esp uart
-    writeuartctl(0); 
+    // select esp uart, set 17-bit prescalar top bits to zero
+    writeuartctl(16); 
     // set the baud rate
     setupuart(0);
 
@@ -435,15 +524,10 @@ void main()
         print("Can't talk to esp", 0, y);
         goto bailout;
     }
-    
-    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", inbuf);
-    setupuart(12);
-    if (atcmd("\r\n\r\n", "ERROR", inbuf))
-    {
-        print("Can't talk to esp fast", 0, y);
+/*
+    if (gofast(inbuf, y))
         goto bailout;
-    }   
-
+*/
     // Try disconnecting just in case.
     atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", inbuf);
 
@@ -466,7 +550,8 @@ void main()
     if (memcmp(dp, "NextSync2", 9) != 0)
     {
         y = print("Server version mismatch", 0, y);
-        y = printn(dp, len, x, y);
+        dp[len] = 0;
+        y = print(dp, x, y);
         y = printnum(len, x, y); y++;
         goto closeconn;
     }
@@ -474,7 +559,8 @@ void main()
     do
     {
         cipxfer("Next", 4, inbuf, &len, &dp);
-        filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];
+
+        filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];        
         fnlen = dp[4];
         memcpy(fn, dp+5, fnlen);
         fn[fnlen] = 0;
@@ -486,46 +572,8 @@ void main()
             y = print("Size:", 0, y);
             y--;
             y = printnum(filelen, 5, y);
-            received = 0;
-            filehandle = fopen(fn, 2 + 0x0c); // write + create new file, delete existing
-            if (filehandle == 0)
-            {
-                y = print("Unable to open file", 0, y);
-            }
-            else
-            {            
-                do
-                {
-                    unsigned char checksum1 = 0;
-                    unsigned char checksum2 = 0;
-                    unsigned short i;
-                    cipxfer("Get", 3, inbuf, &len, &dp);
-retry:
-                    for (i = 0; i < len - 2; i++)
-                    {
-                        checksum1 ^= dp[i];
-                        checksum2 += checksum1;
-                    }
-
-                    if (checksum1 == dp[len-2] &&
-                        checksum2 == dp[len-1])
-                    {
-                        received += len - 2;
-                        y = print("Xfer:", 0, y);
-                        y--;
-                        printnum(received, 5, y);
-                        fwrite(filehandle, dp, len-2);
-                    }
-                    else
-                    {
-                        cipxfer("Retry", 5, inbuf, &len, &dp);
-                        goto retry;
-                    }
-                } 
-                while (len > 2);
-                fclose(filehandle);
-                y++;
-            }
+            transfer(fn, inbuf, y);
+            y++;
         }
     }
     while (*fn != 0);
@@ -543,9 +591,14 @@ closeconn:
         scrollup();
         y -= 8;
     }
-    y=print("All done", 0, y);
+    print("All done", 0, y);
 bailout:
-    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", inbuf);
+    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", inbuf); // restore uart speed
     writenextreg(0x07, nextreg7); // restore speed
     return;
+}
+
+unsigned short test(char * b)
+{
+    return (unsigned short)b;
 }

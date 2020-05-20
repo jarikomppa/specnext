@@ -177,3 +177,35 @@ _readuartctl::
 
     pop af
     ret
+
+;nextsync.c:207: unsigned short receive(char *b)
+;	---------------------------------
+; Function receive
+; ---------------------------------
+_receive::
+; bc port
+; hl count
+; de outbuf
+    pop hl  ; return address
+    pop de  ; char *b
+    push de ; restore stack
+    push hl
+    ld hl, #0 ; count
+    ld bc, #0x133b   ; uart tx
+nextbyte:
+    in a, (c)
+    and a, #0x01
+    jr z, done   ; nothing incoming, done
+    inc b        ; to uart rx
+    in a, (c)
+    ld (de), a   ; store to buffer
+    and a, #0x07
+    out (254), a ; blinky
+    inc de       ; inc buffer idx
+    inc hl       ; inc count
+    dec b        ; back to tx
+    jp nextbyte
+done:     
+    ret        ; hl = count
+
+_endof_uart:

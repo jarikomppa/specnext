@@ -3,7 +3,7 @@
 		.globl _cmdline
 
 		.area _HEADER(ABS)
-	
+_crt0_entry:	
 		di
 
         ld (_cmdline),hl 
@@ -86,6 +86,8 @@ _cmdline:   .word 0
 _pagehandle: .word 0
 _mmu7: .db 0
 
+
+_endof_crt0:
 		;;	(linker documentation:) where specific ordering is desired - 
 		;;	the first linker input file should have the area definitions 
 		;;	in the desired order
@@ -101,7 +103,7 @@ _mmu7: .db 0
 		;;	unlike gnu toolchain which generates data, sdcc generates 
 		;;	initialization code for every initialized global 
 		;;	variable. and it puts this code into _GSINIT area
-        	.area _GSINIT
+        	.area _GSINIT        	
 gsinit:	
         	.area _GSFINAL
         	ret

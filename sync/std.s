@@ -17,3 +17,5 @@ _memcpy::
 	ldir
 empty_memcpy:
 	jp	(iy)
+
+_endof_std:

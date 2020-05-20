@@ -159,4 +159,5 @@ _freepage::
     rst     #0x8
     .db     #0x94                   ; +3dos call
 	ret
-	
+
+_endof_esxdos:	
