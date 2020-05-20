@@ -114,38 +114,35 @@ while True:
                 if data == b"Sync2":
                     print(f'{timestamp()} | Sending "{VERSION}"')
                     sendpacket(conn, str.encode(VERSION))
-                else:
-                    if data == b"Next":
-                        if fn >= len(f):
-                            print(f"{timestamp()} | Nothing (more) to sync")
-                            packet = b'\x00\x00\x00\x00\x00' # end of.
-                            sendpacket(conn, packet)
-                            touch(SYNCPOINT) # Sync complete, set sync point
-                        else:
-                            specfn = '/' + f[fn][0].replace('\\','/')
-                            print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
-                            packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
-                            #print(packet)
-                            sendpacket(conn,packet)
-                            with open(f[fn][0], 'rb') as srcfile:
-                                filedata = srcfile.read()
-                            fileofs = 0
-                            fn+=1                                                        
+                elif data == b"Next":
+                    if fn >= len(f):
+                        print(f"{timestamp()} | Nothing (more) to sync")
+                        packet = b'\x00\x00\x00\x00\x00' # end of.
+                        sendpacket(conn, packet)
+                        touch(SYNCPOINT) # Sync complete, set sync point
                     else:
-                        if data == b"Get":
-                            bytecount = 1024
-                            if bytecount + fileofs > len(filedata):
-                                bytecount = len(filedata) - fileofs
-                            packet = filedata[fileofs:fileofs+bytecount]
-                            print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
-                            sendpacket(conn, packet)
-                            fileofs += bytecount
-                        else:
-                            if data == b"Retry":
-                                print(f"{timestamp()} | Resending")
-                                sendpacket(conn, packet)
-                            else:
-                                print(f"{timestamp()} | Unknown command")
-                                sendpacket(conn,str.encode("Error"))
+                        specfn = '/' + f[fn][0].replace('\\','/')
+                        print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
+                        packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
+                        #print(packet)
+                        sendpacket(conn,packet)
+                        with open(f[fn][0], 'rb') as srcfile:
+                            filedata = srcfile.read()
+                        fileofs = 0
+                        fn+=1                                                        
+                elif data == b"Get":
+                    bytecount = 1024
+                    if bytecount + fileofs > len(filedata):
+                        bytecount = len(filedata) - fileofs
+                    packet = filedata[fileofs:fileofs+bytecount]
+                    print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
+                    sendpacket(conn, packet)
+                    fileofs += bytecount
+                elif data == b"Retry":
+                    print(f"{timestamp()} | Resending")
+                    sendpacket(conn, packet)
+                else:
+                    print(f"{timestamp()} | Unknown command")
+                    sendpacket(conn,str.encode("Error"))
     print(f"{timestamp()} | Disconnected")
     print()
