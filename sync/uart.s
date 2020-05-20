@@ -206,6 +206,8 @@ nextbyte:
     dec b        ; back to tx
     jp nextbyte
 done:     
+    xor a
+    out (254), a ; blinky
     ret        ; hl = count
 
 _endof_uart:

@@ -8,7 +8,7 @@
 #include "yofstab.h"
 #include "fona.h"
 
-#define TIMEOUT 60000
+#define TIMEOUT 10000
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
@@ -249,16 +249,16 @@ void send(const char *b, unsigned char bytes)
     gPort254 = 0;
 }
 
-unsigned char strinstr(char *a, char *b, unsigned short len)
+unsigned char strinstr(char *a, char *b, unsigned short len, char blen)
 {
-    if (!*b) return 1;
+    if (!*b || !blen) return 1;
     while (len)
     {
         if (*a == *b)
         {
             unsigned char i = 0;
             while (b[i] && a[i] == b[i]) i++;
-            if (b[i] == 0)
+            if (i >= blen)
                 return 1;
         }
         a++;
@@ -309,7 +309,7 @@ char bufinput(char *buf, unsigned short *len)
     return 1;
 }
 
-unsigned char atcmd(char *cmd, char *expect, char *buf)
+unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
 {
     unsigned short len = 0;
     unsigned short b = 0;
@@ -327,7 +327,7 @@ unsigned char atcmd(char *cmd, char *expect, char *buf)
         len += b;
         if (b) timeout = TIMEOUT;
         timeout--;
-        if (strinstr(buf, expect, len))
+        if (strinstr(buf, expect, len, expectlen))
             return 0;
     }    
     return 1;
@@ -352,8 +352,9 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     char p = 11;
     p += uitoa(cmdlen, cipsendcmd + p);
     cipsendcmd[p] = '\r'; p++;
-    cipsendcmd[p] = '\n'; 
-    atcmd(cipsendcmd, ">", output); // cipsend prompt
+    cipsendcmd[p] = '\n'; p++;
+    cipsendcmd[p] = 0;
+    atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
     *len = 0;
     send(cmd, cmdlen);
     if (bufinput(output, len)) return;
@@ -367,12 +368,9 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     *len -= 2; // reduce size bytes    
 }
 
-char gofast(char *inbuf, char y)
+void flush_uart_hard()
 {
     unsigned short timeout = TIMEOUT;
-    //char x;
-    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", inbuf);
-    setupuart(12);
     while (timeout)
     {
         if (readuarttx() & 1)
@@ -382,7 +380,15 @@ char gofast(char *inbuf, char y)
         }
         timeout--;
     }
-    if (atcmd("\r\n\r\n", "ERROR", inbuf))
+}
+
+char gofast(char *inbuf, char y)
+{
+    //char x;
+    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+    setupuart(12);
+    flush_uart_hard();
+    if (atcmd("\r\n\r\n", "ERROR", 5, inbuf))
     {
         /*
         for (x = 0; x < 32; x++)
@@ -519,26 +525,26 @@ void main()
     // set the baud rate
     setupuart(0);
 
-    if (atcmd("\r\n\r\n", "ERROR", inbuf)) 
+    if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
     {
         print("Can't talk to esp", 0, y);
         goto bailout;
     }
-/*
+
     if (gofast(inbuf, y))
         goto bailout;
-*/
-    // Try disconnecting just in case.
-    atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", inbuf);
 
-    y = print("Connecting to:", 0, y);
-    y = print(fn, 0, y);
+    // Try disconnecting just in case.
+    atcmd("AT+CIPCLOSE\r\n\r\n", "ERROR", 5, inbuf);
+
+    y = print("Connecting to ", 0, y); y--;
+    y = print(fn, 14, y);
 
     memcpy(inbuf+1024, cipstart_prefix, 19);
     memcpy(inbuf+1024+19, fn, len);
-    memcpy(inbuf+1024+19+len, cipstart_postfix, 8);
+    memcpy(inbuf+1024+19+len, cipstart_postfix, 9);
 
-    if (atcmd(inbuf+1024, "OK", inbuf))
+    if (atcmd(inbuf+1024, "OK", 2, inbuf))
     {
         print("Unable to connect", 0, y);
         goto bailout;
@@ -581,7 +587,7 @@ void main()
 closeconn:
     y+=2;
     y = checkscroll(y);
-    if (atcmd("AT+CIPCLOSE\r\n", "OK", inbuf))
+    if (atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf))
     {
         y=print("Close failed", 0, y);
         goto bailout;
@@ -593,12 +599,7 @@ closeconn:
     }
     print("All done", 0, y);
 bailout:
-    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", inbuf); // restore uart speed
+    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
     writenextreg(0x07, nextreg7); // restore speed
     return;
-}
-
-unsigned short test(char * b)
-{
-    return (unsigned short)b;
 }
