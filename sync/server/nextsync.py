@@ -8,6 +8,7 @@
 import datetime
 import fnmatch
 import socket
+import struct
 import glob
 import os
 
@@ -96,13 +97,15 @@ while True:
         s.bind(("", PORT))
         s.listen()
         conn, addr = s.accept()
+        # Make sure *nixes close the socket when we ask it to.
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
         f = getFileList()
         print(f'{timestamp()} | Sync file list has {len(f)} files.')
         fn = 0;
         filedata = b''
         packet = b''
         fileofs = 0
-        with conn:
+        with conn:            
             print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
             working = True
             while working:
