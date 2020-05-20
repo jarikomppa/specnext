@@ -178,10 +178,7 @@ _readuartctl::
     pop af
     ret
 
-;nextsync.c:207: unsigned short receive(char *b)
-;	---------------------------------
-; Function receive
-; ---------------------------------
+;extern unsigned short receive(char *b)
 _receive::
 ; bc port
 ; hl count

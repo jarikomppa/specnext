@@ -18,6 +18,7 @@ extern unsigned char fopen(unsigned char *fn, unsigned char mode);
 extern void fclose(unsigned char handle);
 extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
+extern void makepath(char *pathspec); // must be 0xff terminated!
 
 extern void writenextreg(unsigned char reg, unsigned char val);
 extern unsigned char readnextreg(unsigned char reg);
@@ -369,8 +370,10 @@ void flush_uart_hard()
 
 char gofast(char *inbuf, char y)
 {
-    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
-    setupuart(12);
+    //atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+    //setupuart(12);
+    atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
+    setupuart(14);
     flush_uart_hard();
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf))
     {
@@ -380,13 +383,36 @@ char gofast(char *inbuf, char y)
     return 0;
 }
 
+unsigned char createfilewithpath(char * fn)
+{
+    unsigned char filehandle;
+    char * slash;
+    filehandle = fopen(fn, 2 + 0x0c);  // write + create new file, delete existing
+    if (filehandle) return filehandle;
+    // Okay, couldn't create the file, so let's try to make the path.
+    // We need to call makepath for each directory in the tree to build
+    // complex paths.
+    slash = fn;    
+    while (*slash) 
+    {
+        slash++;
+        if (*slash == '/')
+        {
+            *slash = 0xff;    
+            makepath(fn);    
+            *slash = '/';
+        }
+    }
+    return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
+}
+
 void transfer(char *fn, char *inbuf, char y)
 {
     unsigned char *dp;
     unsigned long received = 0;
     unsigned short len;
     unsigned char filehandle;
-    filehandle = fopen(fn, 2 + 0x0c); // write + create new file, delete existing
+    filehandle = createfilewithpath(fn);
     if (filehandle == 0)
     {
         y = print("Unable to open file", 0, y);
@@ -448,7 +474,7 @@ void main()
           
     y = 0;
     
-    y = print("NextSync 0.6 by Jari Komppa", 0, y);
+    y = print("NextSync 0.7 by Jari Komppa", 0, y);
     y++;
  
     len = parse_cmdline(fn);
@@ -458,7 +484,7 @@ void main()
         y = print(fn, 0, y);
         y = print("-> ", 0 , y); y--;
         y = print((char*)conffile, 3, y);
-        filehandle = fopen((char*)conffile, 2 + 0x0c); // write + create new file, delete existing
+        filehandle = createfilewithpath((char*)conffile);
         if (filehandle == 0)
         {
             y = print("Failed to open file", 0, y);

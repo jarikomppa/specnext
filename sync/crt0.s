@@ -32,27 +32,28 @@ _crt0_entry:
     	jr      nc, allocfail
         ld      (_pagehandle),de
 
-    	ld	    a,      #0x57 ; nextreg
+    	ld	    a,      #0x54 ; nextreg 
         ld      bc,     #0x243B   ; nextreg select
         out     (c),    a
         inc     b                 ; nextreg i/o
         in      a,      (c)
-        ld      (_mmu7), a
+        ld      (_mmu4), a
         ld      a, (_pagehandle)
         out     (c),     a
 
-		ld sp, #0xffff
+;		ld sp, #0xffff ; for mmu7
+		ld sp, #0x9fff ; for mmu4
 
 		call gsinit			; init static vars (sdcc style)
 
 		;; start the os
 		call _main			
 
-    	ld	    a,      #0x57 ; nextreg
+    	ld	    a,      #0x54 ; nextreg
         ld      bc,     #0x243B   ; nextreg select
         out     (c),    a
         inc     b                 ; nextreg i/o
-        ld      a, (_mmu7)
+        ld      a, (_mmu4)
         out     (c),     a
 
     	ld	    de, (_pagehandle)       ; page
@@ -84,7 +85,7 @@ allocfail:
 store_sp:	.word 252
 _cmdline:   .word 0
 _pagehandle: .word 0
-_mmu7: .db 0
+_mmu4: .db 0
 
 
 _endof_crt0:

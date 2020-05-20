@@ -7,6 +7,7 @@
 	.globl _readnextreg
 	.globl _allocpage
 	.globl _freepage
+	.globl _makepath
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -159,5 +160,36 @@ _freepage::
     rst     #0x8
     .db     #0x94                   ; +3dos call
 	ret
+
+; extern void makepath(char *pathspec); // must be 0xff terminated!
+_makepath::
+    pop de  ; return address
+    pop hl  ; char *pathspec
+    push hl ; restore stack
+    push de
+
+;	push af
+;	push bc
+;	push de
+;	push hl
+;	push ix
+;	push iy
+    
+    ld a, #0x02 ; make path
+    exx                             ; place parameters in alternates
+    ld      de, #0x01b1             ; IDE_PATH
+    ld      c, #7                   ; "usually 7, but 0 for some calls"
+    rst     #0x8
+    .db     #0x94                   ; +3dos call
+
+;	pop iy
+;	pop ix
+;	pop hl
+;	pop de
+;	pop bc
+;	pop af
+
+	ret
+    
 
 _endof_esxdos:	
