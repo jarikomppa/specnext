@@ -1,9 +1,11 @@
-NextSync 0.5
+NextSync 0.6
 by Jari Komppa 2020
 http://iki.fi/sol
 
 
 
+What is this?
+-------------
 NextSync provides a way to transfer files to the ZX Spectrum Next using
 the Next's WIFI module. While it is primarily designed to be a 
 development tool, it can be useful for non-developer users of the Next.
@@ -15,7 +17,35 @@ The server is implemented in Python 3, and as such should work on any
 platform that runs Python (windows, mac, linux, bsd, probably your
 fridge).
 
-Setup:
+
+
+Usage concept
+-------------
+Server runs from a directory that is mirrored to the root of the next
+filesystem. I.e, if you want to copy "hello.txt" to "/test/" directory,
+first create the "test" directory both on the sd card and under
+the folder you're running the server from, put "hello.txt" to the
+server's "test" directory, and run .sync on the next. The file
+should get copied over.
+
+You don't need (and should not!) have all of the sd card's files in
+your sync folder.
+
+The sever creates syncpoint.dat to know which files are new. If you
+want to sync everything, just delete the file.
+
+If you have files in your sync folder you don't want to be synced
+(such as temporary files from compilation), you can add them to the
+syncignore.txt file.
+
+The server does not need to be closed between syncs. The server
+checks for files to send when .sync is run on the next.
+
+
+
+Step By Step Setup
+------------------
+
 1.  Copy dot/sync from this distribution to your spectrum next sd card
     (into the dot directory).
 
@@ -32,7 +62,7 @@ Setup:
     following:
 
 -- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
-NextSync server, protocol version NextSync1
+NextSync server, protocol version NextSync2
 by Jari Komppa 2020
 
 Running on host: DESKTOP-NEW2020
@@ -41,7 +71,7 @@ IP addresses:
     192.168.1.225
 
 Note: Sync point file syncpoint.dat not found, syncing all files regardless of timestamp.
-Note: Ready to sync 0 files.
+Note: Ready to sync 7 files.
 
 2020-05-18 22:02:55 | NextSync listening to port 2048
 -- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
@@ -77,17 +107,22 @@ Note: Ready to sync 0 files.
     
     
     
-Troubleshooting:
-    - When in doubt, cold boot, close server and restart it.
+Troubleshooting
+---------------
+
+    - When in doubt, cold boot the next, close server and restart it.
 
 "Can't talk to esp" 
-    - the wifi module is not in its default bit rate. Try cold boot (completely
-      power off), or if you'd rather not, you can type
-      .uart -f
-      to reset the bit rate. To exit the '.uart' press symbol shift and space.
+    - Is the wifi module installed?
+    - Is the wifi module configured?
+    - The wifi module is probably not in its default bit rate. 
+      Try cold boot (completely power off), or if you'd rather not, you can type
+      .uart -f to reset the bit rate. 
+      To exit the '.uart' press symbol shift and space.
       
 "Can't talk to esp fast"
     - Shouldn't happen. Do a cold boot and try again.
+    - Try syncslow instead of sync.
 
 "Unable to connect"
     - Is the server running?
@@ -105,4 +140,47 @@ Troubleshooting:
 
 "Close failed"
     - Server probably closed the connection. Shouldn't happen.
-    
+
+
+
+Protocol
+--------
+
+The NextSync2 protocol works as follows:
+
+All server sent packages are encapsulated with
+[2 bytes big endian whole packet size][payload][checksums, 2 bytes]
+
+Where checksum1 and checksum2 are calculated by:
+checksum1=0
+checksum2 = 0
+for every x in payload:
+  checksum1 = checksum1 xor x
+  checksum2 = checksum2 + checksum1
+
+Handshake:
+next: "Sync2"
+server:"NextSync2"
+- To check that we're talking the same language
+
+Next file:
+next: "Next"
+server: [file length 4 bytes big endian][filename length 1 byte][filename]
+- Request the next file to be synced
+- If no files left, payload of five zeroes
+
+Next chunk:
+next: "Get"
+server: [up to 1024 bytes]
+- If file has ended, payload is empty
+
+Retry:
+next:"Retry"
+server: resend previous payload
+- Retrying happens forever
+
+Otherwise:
+next:???
+server:"Error"
+- For other requests, server returns "Error"
+
