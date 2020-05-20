@@ -438,8 +438,11 @@ retry:
                 checksum2 == dp[len-1])
             {
                 received += len - 2;
-                printnum(received, 5, y);
+                if (len <= 2 || (received & 1024) == 0) // skip every second print for tiny speedup
+                    printnum(received, 5, y);
+                gPort254 = 2;
                 fwrite(filehandle, dp, len-2);
+                gPort254 = 0;
             }
             else
             {
