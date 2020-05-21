@@ -242,7 +242,7 @@ unsigned char strinstr(char *a, char *b, unsigned short len, char blen)
     while (len)
     {
         if (*a == *b)
-        {
+        {            
             unsigned char i = 0;
             while (b[i] && a[i] == b[i]) i++;
             if (i >= blen)
@@ -268,6 +268,8 @@ char bufinput(char *buf, unsigned short *len)
         {
             if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
             {
+                // Trying to keep this loop relatively tight, because
+                // the uart fifo overrun is a real problem.
                 while (timeout && ofs < 2048)
                 {
                     ofs += receive(buf + ofs);
@@ -284,8 +286,7 @@ char bufinput(char *buf, unsigned short *len)
                     timeout--;
                 }
             }
-        }        
-        
+        }                
         timeout--;
     }    
     return 1;
@@ -325,9 +326,9 @@ void noconfig()
 
 void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
-    const char *cccmd="AT+CIPSEND=12345\r\n";
+    const char *cccmd="AT+CIPSEND=12345\r\n"; // 5 digits should be enough. (heck, two probably are)
     char *cipsendcmd=(char*)cccmd;
-    char p = 11;
+    char p = 11; // offset to digits in cccmd
     p += uitoa(cmdlen, cipsendcmd + p);
     cipsendcmd[p] = '\r'; p++;
     cipsendcmd[p] = '\n'; p++;
@@ -337,6 +338,11 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     send(cmd, cmdlen);
     if (bufinput(output, len)) return;
     
+    // Buffer should have "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
+    // followed by the input. The input should start with two bytes
+    // for packet size, payload, and then two bytes of checksums.
+    
+    // Skip to the ':' from the above expected string.
     while (*output != ':') 
     {
         output++;
@@ -346,6 +352,7 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     *len -= 2; // reduce size bytes    
 }
 
+// Do the maximum effort to empty the uart.
 void flush_uart_hard()
 {
     unsigned short timeout = TIMEOUT;
@@ -364,8 +371,13 @@ char gofast(char *inbuf, char y)
 {
     atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
     setupuart(12);
+    // Tests show that upping the uart speed didn't actually
+    // affect the transfer rate. Let's keep it to 10x std
+    // for stability.
     //atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
     //setupuart(14);
+    // Note that if you enable the above, also change the 
+    // fallback setupuart() call in main.
     flush_uart_hard();
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf))
     {
@@ -390,7 +402,7 @@ unsigned char createfilewithpath(char * fn)
         slash++;
         if (*slash == '/')
         {
-            *slash = 0xff;    
+            *slash = 0xff; // makepath wants strings to end with 0xff
             makepath(fn);    
             *slash = '/';
         }
@@ -419,7 +431,8 @@ retry:
             if (checksum(dp, len-2)==0)
             {
                 received += len - 2;
-                if (len <= 2 || (received & 1024) == 0) // skip every second print for tiny speedup
+                // skip every second print for tiny speedup (except the last print)
+                if (len <= 2 || (received & 1024) == 0) 
                     printnum(received, 5, y);
                 fwrite(filehandle, dp, len-2);
             }
@@ -454,12 +467,14 @@ void main()
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
 
+    // cls
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
           
     y = 0;
     
     y = print("NextSync 0.7 by Jari Komppa", 0, y);
+    y = print("http://iki.fi/sol", 0, y);
     y++;
  
     len = parse_cmdline(fn);
@@ -493,7 +508,7 @@ void main()
  
     // select esp uart, set 17-bit prescalar top bits to zero
     writeuartctl(16); 
-    // set the baud rate
+    // set the baud rate (default)
     setupuart(0);
 
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
@@ -507,6 +522,9 @@ void main()
             print("Can't talk to esp", 0, y);
             goto bailout;
         }
+        // if we get this far, esp was already at the fast rate
+        // (which can happen if you reset the next while
+        // transfer is going on)
     }
 
     if (!fastuart && gofast(inbuf, y))
@@ -518,11 +536,13 @@ void main()
     y = print("Connecting to ", 0, y); y--;
     y = print(fn, 14, y);
 
-    memcpy(inbuf+1024, cipstart_prefix, 19);
-    memcpy(inbuf+1024+19, fn, len);
-    memcpy(inbuf+1024+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
+    // Build the cipstart command in the huge buffer we have,
+    // far enough that the atcommand shouldn't wreck it..
+    memcpy(inbuf+2048, cipstart_prefix, 19);
+    memcpy(inbuf+2048+19, fn, len);
+    memcpy(inbuf+2048+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
 
-    if (atcmd(inbuf+1024, "OK", 2, inbuf))
+    if (atcmd(inbuf+2048, "OK", 2, inbuf))
     {
         print("Unable to connect", 0, y);
         goto bailout;
@@ -585,6 +605,5 @@ closeconn:
     print("All done", 0, y);
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
-    writenextreg(0x07, nextreg7); // restore speed
-    return;
+    writenextreg(0x07, nextreg7); // restore cpu speed
 }
