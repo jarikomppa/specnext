@@ -258,29 +258,24 @@ char bufinput(char *buf, unsigned short *len)
 {
     unsigned short timeout = TIMEOUT;
     unsigned short ofs = 0;
-    unsigned short b;
     unsigned short i = 0;
     unsigned short hdr = 0;
     unsigned short destsize = 0xfff;
     while (timeout)
     {
-        b = receive(buf + ofs);
-        ofs += b;
-        if (b) timeout = TIMEOUT;
+        ofs += receive(buf + ofs);
         for (; i < ofs; i++)
         {
             if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
             {
-                while (timeout)
+                while (timeout && ofs < 2048)
                 {
-                    b = receive(buf + ofs);
-                    ofs += b;
+                    ofs += receive(buf + ofs);
                     if (ofs >= destsize)
                     {
                         *len = hdr;
                         return 0;
                     }
-                    if (b) timeout = TIMEOUT;
                     if (ofs > i + 2)
                     {
                         hdr = ((buf[i+1]<<8) | buf[i+2]);
@@ -299,20 +294,16 @@ char bufinput(char *buf, unsigned short *len)
 unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
 {
     unsigned short len = 0;
-    unsigned short b = 0;
     unsigned short timeout = TIMEOUT;
     unsigned char l = 0;
         
     while (cmd[l]) l++;
-
     flush_uart();
     send(cmd, l);
 
-    while (timeout)
+    while (timeout && len < 2048)
     {        
-        b = receive(buf + len);
-        len += b;
-        if (b) timeout = TIMEOUT;
+        len += receive(buf + len);
         timeout--;
         if (strinstr(buf, expect, len, expectlen))
             return 0;
@@ -434,6 +425,7 @@ retry:
             }
             else
             {
+                flush_uart_hard();
                 cipxfer("Retry", 5, inbuf, &len, &dp);
                 goto retry;
             }
@@ -482,6 +474,7 @@ void main()
             y = print("Failed to open file", 0, y);
             goto bailout;
         }
+        
         fwrite(filehandle, fn, len);
         fclose(filehandle);        
         goto bailout;
@@ -547,20 +540,30 @@ void main()
     }
     
     do
-    {
-        cipxfer("Next", 4, inbuf, &len, &dp);
+    {        
 
-        filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];        
-        fnlen = dp[4];
-        memcpy(fn, dp+5, fnlen);
-        fn[fnlen] = 0;
-        if (*fn)
+        cipxfer("Next", 4, inbuf, &len, &dp);
+retrynext:
+        if (checksum(dp, len-2) == 0)
         {
-            y = print("File:\nSize:\nXfer:", 0, y);
-            print(fn, 5, y-3);
-            printnum(filelen, 5, y-2);
-            transfer(fn, inbuf, y-1);
-            y = checkscroll(y);
+            filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];        
+            fnlen = dp[4];
+            memcpy(fn, dp+5, fnlen);
+            fn[fnlen] = 0;
+            if (*fn)
+            {
+                y = print("File:\nSize:\nXfer:", 0, y);
+                print(fn, 5, y-3);
+                printnum(filelen, 5, y-2);
+                transfer(fn, inbuf, y-1);
+                y = checkscroll(y);
+            }
+        }
+        else
+        {
+            flush_uart_hard();
+            cipxfer("Retry", 5, inbuf, &len, &dp);
+            goto retrynext;
         }
     }
     while (*fn != 0);
@@ -581,10 +584,6 @@ closeconn:
     print("All done", 0, y);
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
-    /*
-    memset((unsigned char*)yofs[0]+192*32,56,24*32);
-    gPort254 = 7;
-    */
     writenextreg(0x07, nextreg7); // restore speed
     return;
 }
