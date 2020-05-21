@@ -1,4 +1,4 @@
-NextSync 0.6
+NextSync 0.7
 by Jari Komppa 2020
 http://iki.fi/sol
 
@@ -8,7 +8,8 @@ What is this?
 -------------
 NextSync provides a way to transfer files to the ZX Spectrum Next using
 the Next's WIFI module. While it is primarily designed to be a 
-development tool, it can be useful for non-developer users of the Next.
+development tool (syncing builds easily to the next), but it can be 
+useful for non-developer users of the Next.
 
 NextSync consists of two parts: server running on a desktop machine
 and a "dot" command running on the next itself.
@@ -28,6 +29,18 @@ the folder you're running the server from, put "hello.txt" to the
 server's "test" directory, and run .sync on the next. The file
 should get copied over.
 
+For example. Assuming you're running the server from:
+
+    c:\spectrum_stuff\nextsync\
+
+the file:
+
+    c:\spectrum_stuff\nextsync\dot\zakplay
+
+will be synced to 
+
+    /dot/zakplay
+
 You don't need (and should not!) have all of the sd card's files in
 your sync folder.
 
@@ -46,19 +59,18 @@ checks for files to send when .sync is run on the next.
 Step By Step Setup
 ------------------
 
-1.  Copy dot/sync from this distribution to your spectrum next sd card
-    (into the dot directory).
+DESKTOP SIDE SETUP
 
-2.  Copy the specnext.py to the directory on your machine which you
+1.  Copy the specnext.py to the directory on your machine which you
     desire to represent the "root" of the next's filesystem (i.e, the
     sd card). You may also want to copy the syncignore.txt.
     syncignore.txt contains filenames and file masks you don't want
     to sync. The default ignores .bak files as well as the server
     itself.    
 
-3.  Install python 3 if you don't have it (python.org)
+2.  Install python 3 if you don't have it (python.org)
 
-4.  Run the server specnext.py. It should show something like the
+3.  Run the server specnext.py. It should show something like the
     following:
 
 -- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
@@ -70,14 +82,24 @@ IP addresses:
     192.168.56.1
     192.168.1.225
 
+Note: Using C:\specnext\nextsync as sync root
 Note: Sync point file syncpoint.dat not found, syncing all files regardless of timestamp.
-Note: Ready to sync 7 files.
+Warning: Ready to sync 48 files, 471.53 kilobytes.
 
 2020-05-18 22:02:55 | NextSync listening to port 2048
 -- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
 
+4. Take heed of the warnings printed. If the root directory is wrong or 
+   you're seeing a massive amount of data to be synced, you may have
+   run the server in a wrong directory.
+   
 5. Your operating system may ask if you want to let the server
    use the network. Local area network access is sufficient.   
+
+ZX SPECTRUM NEXT SIDE SETUP
+
+5.  Copy dot/sync from this distribution to your spectrum next sd card
+    (into the dot directory).
    
 6. Make sure the wifi module is working on the next. If you've never
    used it, run the /demos/esp/wifi.bas from the spectrum next sd card.
@@ -96,14 +118,14 @@ Note: Ready to sync 7 files.
    
 9. Now you can type .sync without parameters and it should do the sync.
 
-10. Add/modify files to the server directory (or, more likely, a subdirectory)
-    and run .sync again. Note that you don't need to close the server.
+Now you can add/modify files to the server directory (or, more likely, a 
+subdirectory) and run .sync again. Note that you don't need to close the server.
     
-11. The server only sends new files. To force sync of everything, delete
-    the syncpoint.dat file that the server creates.
+The server only sends new files. To force sync of everything, delete
+the syncpoint.dat file that the server creates.
     
-12. To close the server, either just close its window, or hit control-break.
-    Control-c doesn't seem to work, at least in windows.
+To close the server, either just close its window, or hit control-break.
+Control-c doesn't seem to work, at least in windows.
     
     
     
