@@ -450,11 +450,12 @@ void main()
     unsigned char nextreg7;
     char fastuart = 0;
     char filehandle;
-    memset((unsigned char*)yofs[0],0,192*32);
-    memset((unsigned char*)yofs[0]+192*32,4,24*32);
     
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
+
+    memset((unsigned char*)yofs[0],0,192*32);
+    memset((unsigned char*)yofs[0]+192*32,4,24*32);
           
     y = 0;
     
