@@ -62,7 +62,7 @@ Step By Step Setup
 DESKTOP SIDE SETUP
 
 1.  Copy the specnext.py to the directory on your machine which you
-    desire to represent the "root" of the next's filesystem (i.e, the
+    desire to represent the "root" of the Next's filesystem (i.e, the
     sd card). You may also want to copy the syncignore.txt.
     syncignore.txt contains filenames and file masks you don't want
     to sync. The default ignores .bak files as well as the server
@@ -99,7 +99,7 @@ ZX SPECTRUM NEXT SIDE SETUP
 5.  Copy dot/sync from this distribution to your spectrum next sd card
     (into the dot directory).
    
-6. Make sure the wifi module is working on the next. If you've never
+6. Make sure the WIFI module is working on the next. If you've never
    used it, run the /demos/esp/wifi.bas from the spectrum next sd card.
    After setting up, you can try /demos/NXtel to see if you can 
    connect somewhere. 
@@ -143,13 +143,13 @@ Troubleshooting
 "Can't talk to esp fast"
     - Shouldn't happen. Do a cold boot and try again.
     - Try syncslow instead of sync. 
-      Slowsync is a fallback version which uses the standard uart speed.
+      syncslow is a fallback version which uses the standard uart speed.
 
 "Unable to connect"
     - Is the server running?
     - Is the server ip/name correct?
     - Is the server on the same network?
-    - Is the next's wifi configured to be on the same network?
+    - Is the Next's wifi configured to be on the same network?
     - The server name is stored in c:/sys/config/nextsync.cfg
 
 "Server version mismatch"
