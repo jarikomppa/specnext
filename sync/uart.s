@@ -6,6 +6,7 @@
 	.globl _writeuartctl
 	.globl _readuartctl
 	.globl _setupuart
+	.globl _checksum
 	.area _CODE
 
 
@@ -207,4 +208,116 @@ done:
     out (254), a ; blinky
     ret        ; hl = count
 
+
+;extern char checksum(char *dp, unsigned short len)
+_checksum::
+    pop de ; return address
+    pop hl ; datapointer
+    pop bc ; len
+    push bc ; restore stack
+    push hl
+    push de
+    
+    ld de, #0 ; checksums
+checkloop:
+    ld a, b
+    or a, c    
+    jp z, zerocount ; if count (bc) is zero, we're done
+    push bc ; ran out of regs
+    
+    ld a, d         ; d is the running xor checksum
+    ld b, (hl)
+    xor b
+    ld d, a
+    
+    ld a, e         ; e is the sum of running xors
+    add a, d
+    ld e, a        
+    
+    pop bc
+    inc hl
+    dec bc
+    jp checkloop
+zerocount:
+    ld b, (hl)      ; Load the checksums from after the data
+    inc hl
+    ld c, (hl)
+    ld h, b
+    ld l, c
+    or a
+    sbc hl, de
+    ld a, h
+    or l
+    ld l, a
+    
+    ret
+    
+
+
+;	push	ix
+;	ld	ix,#0
+;	add	ix,sp
+;;nextsync.c:416: gPort254 = 5;
+;	ld	a, #0x05
+;	out	(254), a
+;;nextsync.c:417: checksum1 = 0;
+;;nextsync.c:418: checksum2 = 0;
+;	ld	bc, #0x0000
+;;nextsync.c:419: for (i = 0; i < len; i++)
+;	ld	de, #0x0000
+;00106$:
+;	ld	a, e
+;	sub	a, 6 (ix)
+;	ld	a, d
+;	sbc	a, 7 (ix)
+;	jr	NC,00101$
+;;nextsync.c:421: checksum1 ^= dp[i];
+;	ld	l, 4 (ix)
+;	ld	h, 5 (ix)
+;	add	hl, de
+;	ld	a, (hl)
+;	xor	a, c
+;;nextsync.c:422: checksum2 += checksum1;
+;	ld	c, a
+;	add	a,b
+;	ld	b, a
+;;nextsync.c:419: for (i = 0; i < len; i++)
+;	inc	de
+;	jr	00106$
+;00101$:
+;;nextsync.c:425: gPort254 = 0;
+;	ld	a, #0x00
+;	out	(254), a
+;;nextsync.c:426: if (checksum1 == dp[len] &&
+;	ld	a, 4 (ix)
+;	add	a, 6 (ix)
+;	ld	l, a
+;	ld	a, 5 (ix)
+;	adc	a, 7 (ix)
+;	ld	h, a
+;	ld	e, (hl)
+;	ld	a, c
+;	sub	a, e
+;	jr	NZ,00103$
+;;nextsync.c:427: checksum2 == dp[len+1])
+;	ld	e, 6 (ix)
+;	ld	d, 7 (ix)
+;	inc	de
+;	ld	l, 4 (ix)
+;	ld	h, 5 (ix)
+;	add	hl, de
+;	ld	c, (hl)
+;	ld	a, b
+;	sub	a, c
+;;nextsync.c:428: return 1;
+;;nextsync.c:429: return 0;
+;	ld	l, #0x01
+;	jr	Z,00108$
+;00103$:
+;	ld	l, #0x00
+;00108$:
+;;nextsync.c:430: }
+;	pop	ix
+;	ret
+	
 _endof_uart:

@@ -33,6 +33,7 @@ extern void writeuartctl(unsigned char val);
 extern unsigned char readuartctl();
 extern void setupuart(unsigned char rateindex) __z88dk_fastcall;
 extern unsigned short receive(char *b);
+extern char checksum(char *dp, unsigned short len);
 
 extern void memcpy(char *dest, const char *source, unsigned short count);
 
@@ -370,10 +371,10 @@ void flush_uart_hard()
 
 char gofast(char *inbuf, char y)
 {
-    //atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
-    //setupuart(12);
-    atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
-    setupuart(14);
+    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+    setupuart(12);
+    //atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
+    //setupuart(14);
     flush_uart_hard();
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf))
     {
@@ -406,6 +407,7 @@ unsigned char createfilewithpath(char * fn)
     return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
 }
 
+
 void transfer(char *fn, char *inbuf, char y)
 {
     unsigned char *dp;
@@ -421,28 +423,14 @@ void transfer(char *fn, char *inbuf, char y)
     {            
         do
         {
-            unsigned char checksum1;
-            unsigned char checksum2;
-            unsigned short i;
             cipxfer("Get", 3, inbuf, &len, &dp);
 retry:
-            checksum1 = 0;
-            checksum2 = 0;
-            for (i = 0; i < len - 2; i++)
-            {
-                checksum1 ^= dp[i];
-                checksum2 += checksum1;
-            }
-
-            if (checksum1 == dp[len-2] &&
-                checksum2 == dp[len-1])
+            if (checksum(dp, len-2)==0)
             {
                 received += len - 2;
                 if (len <= 2 || (received & 1024) == 0) // skip every second print for tiny speedup
                     printnum(received, 5, y);
-                gPort254 = 2;
                 fwrite(filehandle, dp, len-2);
-                gPort254 = 0;
             }
             else
             {
@@ -468,6 +456,7 @@ void main()
     unsigned char *dp;
     unsigned short len;     
     unsigned char nextreg7;
+    char fastuart = 0;
     char filehandle;
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
@@ -515,11 +504,18 @@ void main()
 
     if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
     {
-        print("Can't talk to esp", 0, y);
-        goto bailout;
+        // Maybe we're already going fast?
+        fastuart = 1;
+        setupuart(12);
+        flush_uart_hard();
+        if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
+        {
+            print("Can't talk to esp", 0, y);
+            goto bailout;
+        }
     }
 
-    if (gofast(inbuf, y))
+    if (!fastuart && gofast(inbuf, y))
         goto bailout;
 
     // Try disconnecting just in case.
