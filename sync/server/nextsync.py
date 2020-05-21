@@ -9,6 +9,7 @@ import datetime
 import fnmatch
 import socket
 import struct
+import time
 import glob
 import os
 
@@ -68,6 +69,27 @@ def sendpacket(conn, payload):
     conn.sendall(packet)
     print(f'{timestamp()} | Packet sent: {len(packet)} bytes, payload: {len(payload)} bytes, checksums: {checksum0}, {checksum1}')
           
+def warnings():
+    print()
+    print(f"Note: Using {os.getcwd()} as sync root");
+    if not os.path.isfile(IGNOREFILE):
+        print(f"Warning! Ignore file {IGNOREFILE} not found in directory. All files will be synced, possibly including this file.")
+    if not os.path.isfile(SYNCPOINT):
+        print(f"Note: Sync point file {SYNCPOINT} not found, syncing all files regardless of timestamp.")
+    initial = getFileList()
+    total = 0
+    for x in initial:
+        total += x[1]
+    severity = ""
+    if len(initial) < 10 and total < 100000:
+        severity ="Note"
+    elif len(initial) < 100 and total < 1000000:
+        severity = "Warning"
+    else:
+        severity = "WARNING"
+    print(f"{severity}: Ready to sync {len(initial)} files, {total/1024:.2f} kilobytes.")
+    print()
+
 
 print(f"NextSync server, protocol version {VERSION}")
 print("by Jari Komppa 2020")
@@ -83,16 +105,12 @@ if hostinfo[2] != []:
     for x in hostinfo[2]:
         print(f"    {x}")
 
-print()
-if not os.path.isfile(IGNOREFILE):
-    print(f"Warning! Ignore file {IGNOREFILE} not found in directory. All files will be synced.")
-if not os.path.isfile(SYNCPOINT):
-    print(f"Note: Sync point file {SYNCPOINT} not found, syncing all files regardless of timestamp.")
-print(f"Note: Ready to sync {len(getFileList())} files.")
-print()
+warnings()
 
 while True:
     print(f"{timestamp()} | NextSync listening to port {PORT}")
+    totalbytes = 0
+    starttime = 0
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", PORT))
         s.listen()
@@ -105,6 +123,8 @@ while True:
         filedata = b''
         packet = b''
         fileofs = 0
+        totalbytes = 0
+        starttime = time.time()
         with conn:            
             print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
             working = True
@@ -137,6 +157,7 @@ while True:
                     bytecount = 1024
                     if bytecount + fileofs > len(filedata):
                         bytecount = len(filedata) - fileofs
+                    totalbytes += bytecount
                     packet = filedata[fileofs:fileofs+bytecount]
                     print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
                     sendpacket(conn, packet)
@@ -147,5 +168,7 @@ while True:
                 else:
                     print(f"{timestamp()} | Unknown command")
                     sendpacket(conn,str.encode("Error"))
+    deltatime = time.time() - starttime
+    print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
     print(f"{timestamp()} | Disconnected")
     print()
