@@ -29,17 +29,17 @@ the folder you're running the server from, put "hello.txt" to the
 server's "test" directory, and run .sync on the next. The file
 should get copied over.
 
-For example. Assuming you're running the server from:
+        For example: Assuming you're running the server from:
 
-    c:\spectrum_stuff\nextsync\
+            c:\spectrum_stuff\nextsync\
 
-the file:
+        the file:
 
-    c:\spectrum_stuff\nextsync\dot\zakplay
+            c:\spectrum_stuff\nextsync\dot\zakplay
 
-will be synced to 
+        will be synced to 
 
-    /dot/zakplay
+            /dot/zakplay
 
 You don't need (and should not!) have all of the sd card's files in
 your sync folder.
@@ -73,21 +73,19 @@ DESKTOP SIDE SETUP
 3.  Run the server specnext.py. It should show something like the
     following:
 
--- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
-NextSync server, protocol version NextSync2
-by Jari Komppa 2020
+        NextSync server, protocol version NextSync2
+        by Jari Komppa 2020
 
-Running on host: DESKTOP-NEW2020
-IP addresses:
-    192.168.56.1
-    192.168.1.225
+        Running on host: DESKTOP-NEW2020
+        IP addresses:
+            192.168.56.1
+            192.168.1.225
 
-Note: Using C:\specnext\nextsync as sync root
-Note: Sync point file syncpoint.dat not found, syncing all files regardless of timestamp.
-Warning: Ready to sync 48 files, 471.53 kilobytes.
+        Note: Using C:\specnext\nextsync as sync root
+        Note: Sync point file syncpoint.dat not found, syncing all files regardless of timestamp.
+        Warning: Ready to sync 48 files, 471.53 kilobytes.
 
-2020-05-18 22:02:55 | NextSync listening to port 2048
--- 8< -- 8< -- 8< -- 8< -- 8< -- 8< -- 
+        2020-05-18 22:02:55 | NextSync listening to port 2048
 
 4. Take heed of the warnings printed. If the root directory is wrong or 
    you're seeing a massive amount of data to be synced, you may have
@@ -144,7 +142,8 @@ Troubleshooting
       
 "Can't talk to esp fast"
     - Shouldn't happen. Do a cold boot and try again.
-    - Try syncslow instead of sync.
+    - Try syncslow instead of sync. 
+      Slowsync is a fallback version which uses the standard uart speed.
 
 "Unable to connect"
     - Is the server running?
@@ -155,6 +154,7 @@ Troubleshooting
 
 "Server version mismatch"
     - Use the same version of server and .sync
+    - If you do and still get this, something is seriously wrong.
 
 "Unable to open file"
     - Can happen if you're trying to sync sync itself, or if the files are open
@@ -162,6 +162,41 @@ Troubleshooting
 
 "Close failed"
     - Server probably closed the connection. Shouldn't happen.
+
+
+
+Server options
+--------------
+
+The server creates syncpoint.dat file which it uses to detect new files to sync.
+If you manage to create files with older timestamp than this, they won't be
+synced.
+
+To force sync all of the files, delete this file. 
+
+To make the server ignore some files and never sync them, add the filenames
+(or file masks) to the syncignore.txt file. For example:
+
+    syncignore.txt
+    
+tells the server not to sync the 'syncignore.txt' file.
+    
+    *.py
+    
+tells the serer not to sync any files with the .py extension.
+
+The server names the filenames it sends as /foo/bar, meaning if you run
+sync from a different drive (should you have several), the sync will
+happen to that drive. You can run the server with an optional parameter
+to add drive letter too:
+
+nextsync.py -c
+
+turns the filenames to c:/foo/bar. The same goes for -d and -e.
+
+The ram disk m: cannot be used as a sync target, and the same goes for
+mounted .dsk or .p3m images. This is a limitation of the esxdos interface
+sync is based on.
 
 
 
@@ -199,6 +234,7 @@ server: [up to 1024 bytes]
 Retry:
 next:"Retry"
 server: resend previous payload
+- Note that this can also happen after 'Next' packet.
 - Retrying happens forever
 
 Otherwise:
