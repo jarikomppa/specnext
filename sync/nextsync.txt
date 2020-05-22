@@ -163,6 +163,21 @@ Troubleshooting
 "Close failed"
     - Server probably closed the connection. Shouldn't happen.
 
+Python error:
+    Traceback (most recent call last):
+       File "... nextsync.py", line 198, in <module>
+         main()
+       File "... nextsync.py", line 100, in main
+         hostinfo = socket.gethostbyname_ex(socket.gethostname())
+    UnicodeDecodeError: 'utf-8' codec can't decode byte ... in position ...
+
+    - You're running Windows and your host name has non-ascii characters.
+      This is a known python issue from 2016. Either rename your computer,
+      or you can try setting the PYTHONLEGACYWINDOWSFSENCODING environment 
+      variable to 1.
+      
+Transfers sometimes stall for several seconds, then continue:
+    - This just seems to happen. I have no answer to this at this time.    
 
 
 Server options
