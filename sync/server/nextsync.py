@@ -21,6 +21,7 @@ SYNCPOINT = "syncpoint.dat"
 
 opt_drive = '/'
 opt_always_sync = False
+opt_sync_once = False
 
 def update_syncpoint(knownfiles):
     with open(SYNCPOINT, 'w') as f:
@@ -115,8 +116,9 @@ def main():
             print(f"    {x}")
 
     warnings()
-
-    while True:
+    
+    working = True
+    while working:
         print(f"{timestamp()} | NextSync listening to port {PORT}")
         totalbytes = 0
         starttime = 0
@@ -138,9 +140,9 @@ def main():
             fileofs = 0
             totalbytes = 0
             starttime = time.time()
-            with conn:            
+            with conn:                
                 print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
-                working = True
+                working = True                
                 while working:
                     data = conn.recv(1024)
                     if not data:
@@ -187,6 +189,8 @@ def main():
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
         print(f"{timestamp()} | Disconnected")
         print()
+        if opt_sync_once:
+            working = False
             
 
 for x in sys.argv[1:]:
@@ -198,6 +202,8 @@ for x in sys.argv[1:]:
         opt_drive = 'e:/'
     elif x == '-a':
         opt_always_sync = True
+    elif x == '-o':
+        opt_sync_once = True
     else:
         print(f"Unknown parameter: {x}")
         print(
@@ -206,6 +212,7 @@ for x in sys.argv[1:]:
         
         Optional parameters:
         -a - Always sync, regardless of timestamps (doesn't skip ignore file)
+        -o - Sync once, then quit. Default is to keep the sync loop running.
         -c - Prefix filenames with c: (i.e, /dot/foo becomes c:/dot/foo)
         -d - Prefix filenames with d: (i.e, /dot/foo becomes d:/dot/foo)
         -e - Prefix filenames wieh e: (i.e, /dot/foo becomes e:/dot/foo)
