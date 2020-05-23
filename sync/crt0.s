@@ -1,6 +1,8 @@
 		.module crt0
 		.globl _heap
 		.globl _cmdline
+		.globl _scr_x
+		.globl _scr_y
 
 		.area _HEADER(ABS)
 _crt0_entry:	
@@ -86,6 +88,8 @@ store_sp:	.word 252
 _cmdline:   .word 0
 _pagehandle: .word 0
 _mmu4: .db 0
+_scr_x: .db 0
+_scr_y: .db 0
 
 
 _endof_crt0:

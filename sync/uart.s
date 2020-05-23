@@ -7,6 +7,7 @@
 	.globl _readuartctl
 	.globl _setupuart
 	.globl _checksum
+	.globl _receive
 	.area _CODE
 
 

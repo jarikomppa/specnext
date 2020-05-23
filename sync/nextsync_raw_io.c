@@ -8,7 +8,7 @@
 #include "yofstab.h"
 #include "fona.h"
 
-#define TIMEOUT 10000
+#define TIMEOUT 30000
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
@@ -39,8 +39,11 @@ extern void memcpy(char *dest, const char *source, unsigned short count);
 
 extern unsigned short framecounter;
 extern char *cmdline;
+
 extern unsigned char scr_x;
 extern unsigned char scr_y;
+
+#define SETXY(x,y) { scr_x = (x); scr_y = (y); }
 
 unsigned char parse_cmdline(char *f)
 {
@@ -77,10 +80,10 @@ void memset(char *a, char b, unsigned short l)
     }
 }
 
-void drawchar(unsigned char c)
+void drawchar(unsigned char c, unsigned char x, unsigned char y)
 {
     unsigned char i;
-    unsigned char *p = (unsigned char*)yofs[scr_y] + scr_x;
+    unsigned char *p = (unsigned char*)yofs[y] + x;
     unsigned short ofs = c * 8;
     for (i = 0; i < 8; i++)
     {
@@ -136,7 +139,7 @@ void print(char * t)
         }
         else
         {
-            drawchar(*t);
+            drawchar(*t, scr_x, scr_y);
             scr_x++;
             if (scr_x == 32)
             {
@@ -194,7 +197,7 @@ void printnum(unsigned long v)
 {
     char temp[16];
     uitoa(v, temp);
-    print(temp);
+    return print(temp);    
 }
 
 void flush_uart()
@@ -248,7 +251,7 @@ unsigned char strinstr(char *a, char *b, unsigned short len, char blen)
     {
         if (*a == *b)
         {            
-            unsigned char i = 0;
+            unsigned char i = 1;
             while (i < blen && a[i] == b[i]) i++;
             if (i >= blen)
                 return 1;
@@ -263,38 +266,25 @@ char bufinput(char *buf, unsigned short *len)
 {
     unsigned short timeout = TIMEOUT;
     unsigned short ofs = 0;
-    unsigned short i = 0;
     unsigned short hdr = 0;
     unsigned short destsize = 0xfff;
-    while (timeout)
+    // Trying to keep this loop relatively tight, because
+    // the uart fifo overrun is a real problem.
+    while (timeout && ofs < 2048)
     {
         ofs += receive(buf + ofs);
-        for (; i < ofs; i++)
+        if (ofs >= destsize)
         {
-            if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
-            {
-                // Trying to keep this loop relatively tight, because
-                // the uart fifo overrun is a real problem.
-                while (timeout && ofs < 2048)
-                {
-                    ofs += receive(buf + ofs);
-                    if (ofs >= destsize)
-                    {
-                        *len = hdr;
-                        return 0;
-                    }
-                    if (ofs > i + 2)
-                    {
-                        hdr = ((buf[i+1]<<8) | buf[i+2]);
-                        destsize = hdr + i + 1;
-                    }
-                    timeout--;
-                }
-                return 1;
-            }
-        }                
+            *len = hdr;
+            return 0;
+        }
+        if (ofs > 2)
+        {
+            hdr = ((buf[0]<<8) | buf[1]);
+            destsize = hdr;
+        }
         timeout--;
-    }    
+    }
     return 1;
 }
 
@@ -321,31 +311,6 @@ retryatcmd:
     return 1;
 }
 
-unsigned char atcmd_noretry(char *cmd, char *expect, char expectlen, char *buf)
-{
-    unsigned short len = 0;
-    unsigned short timeout = TIMEOUT;
-    unsigned char l = 0;
-        
-    while (cmd[l]) l++;
-
-    flush_uart();
-    send(cmd, l);
-
-    while (timeout && len < 2048)
-    {        
-        len += receive(buf + len);
-        timeout--;
-        if (strinstr(buf, expect, len, expectlen))
-            return 0;
-        if (strinstr(buf, "busy", len, 4))
-            return 1;
-        if (strinstr(buf, "ERROR", len, 5))
-            return 1;
-    }    
-    return 1;
-}
-
 void noconfig()
 {
         // 12345678901234567890123456789012
@@ -361,30 +326,11 @@ void noconfig()
 // max cmdlen = 9
 void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
-    const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
-    char *cipsendcmd = (char *)cipsendcmd_c;
-    cipsendcmd[13] = '0' + cmdlen;
-retrycipsend:
-    atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
     *len = 0;
-    if (atcmd_noretry(cmd, "SEND OK", 7, output))
-    {
-        flush_uart_hard();
-        goto retrycipsend;
-    }
-    if (bufinput(output, len)) return;
     flush_uart();
-    // Buffer should have "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
-    // followed by the input. The input should start with two bytes
-    // for packet size, payload, and then two bytes of checksums.
-    
-    // Skip to the ':' from the above expected string.
-    while (*output != ':') 
-    {
-        output++;
-    }
-    //output++;
-    *dataptr = output + 2 + 1; // skip size bytes
+    send(cmd, cmdlen);
+    if (bufinput(output, len)) return;
+    *dataptr = output + 2; // skip size bytes
     *len -= 2; // reduce size bytes    
 }
 
@@ -397,8 +343,6 @@ char gofast(char *inbuf)
     // for stability.
     //atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
     //setupuart(14);
-    // Note that if you enable the above, also change the 
-    // fallback setupuart() call in main.
     flush_uart_hard();
     if (atcmd("\r\n", "ERROR", 5, inbuf))
     {
@@ -455,9 +399,9 @@ retry:
                 // skip every second print for tiny speedup (except the last print)
                 if (len <= 2 || (received & 1024) == 0) 
                 {
-                    scr_x = 5;
+                    SETXY(5, scr_y);
                     printnum(received);
-                    scr_y -=1;
+                    SETXY(scr_x, scr_y-1);
                 }
                 fwrite(filehandle, dp, len-2);
             }
@@ -485,7 +429,6 @@ void main()
     unsigned char *dp;
     unsigned short len;     
     unsigned char nextreg7;
-    char fastuart = 0;
     char filehandle;
     char retrycount;
     
@@ -496,18 +439,19 @@ void main()
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
           
-    scr_y = 0;
+    SETXY(0,0);
     
     print("NextSync 0.8 by Jari Komppa");
     print("http://iki.fi/sol");
-    scr_y++;
+    
+    SETXY(0,3);
  
     len = parse_cmdline(fn);
     if (*fn)
     {
         print("Setting server to:");
         print(fn);
-        print("-> "); scr_y--; scr_x = 3;
+        print("-> "); SETXY(3, scr_y-1);
         print((char*)conffile);
         filehandle = createfilewithpath((char*)conffile);
         if (filehandle == 0)
@@ -536,29 +480,21 @@ void main()
     // set the baud rate (default)
     setupuart(0);
 
-    if (atcmd("\r\n", "ERROR", 5, inbuf)) 
+    if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
     {
-        // Maybe we're already going fast?
-        fastuart = 1;
-        setupuart(12);
         flush_uart_hard();
-        if (atcmd("\r\n", "ERROR", 5, inbuf)) 
+        if (atcmd("\r\n\r\n", "ERROR", 5, inbuf)) 
         {
             print("Can't talk to esp");
             goto bailout;
         }
-        // if we get this far, esp was already at the fast rate
-        // (which can happen if you reset the next while
-        // transfer is going on)
     }
+    
+    if (gofast(inbuf))
+        goto bailout;
 
-    //if (!fastuart && gofast(inbuf))
-//        goto bailout;
 
-    // Try disconnecting just in case.
-    atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
-
-    print("Connecting to "); scr_y--; scr_x = 14;
+    print("Connecting to "); SETXY(14, scr_y-1);
     print(fn);
 
     // Build the cipstart command in the huge buffer we have,
@@ -566,6 +502,11 @@ void main()
     memcpy(inbuf+2048, cipstart_prefix, 19);
     memcpy(inbuf+2048+19, fn, len);
     memcpy(inbuf+2048+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
+
+    // Try disconnecting just in case.
+    atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
+
+    flush_uart_hard();
 
     if (atcmd(inbuf+2048, "OK", 2, inbuf))
     {
@@ -575,10 +516,26 @@ void main()
 
     print("Connected");
     
+    if (atcmd("AT+CIPMODE=1\r\n", "OK", 2, inbuf))
+    {
+        print("Unable to set cip mode");
+        goto closeconn;
+    }
+    
+    // Let's go transparent
+    if (atcmd("AT+CIPSEND\r\n", ">", 1, inbuf))
+    {
+        print("Failed to cipsend");
+        goto closeconn;
+    }
+    
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
     cipxfer("Sync2", 5, inbuf, &len, &dp);
+    //dp[len] = 0;
+    //printnum(len);
+    //print(dp);
 
     if (memcmp(dp, "NextSync2", 9) != 0)
     {
@@ -591,13 +548,13 @@ retryhandshake:
         print("Server version mismatch");
         dp[len] = 0;
         print(dp);
-        printnum(len); scr_y++;
+        printnum(len);
+        print("");
         goto closeconn;
     }
     
     do
     {        
-
         cipxfer("Next", 4, inbuf, &len, &dp);
 retrynext:
         if (checksum(dp, len-2) == 0)
@@ -608,8 +565,8 @@ retrynext:
             fn[fnlen] = 0;
             if (*fn)
             {
-                print("File:\nSize:\nXfer:"); scr_x = 5; scr_y -= 3;
-                print(fn); scr_x = 5;
+                print("File:\nSize:\nXfer:"); SETXY(5, scr_y -3);
+                print(fn); SETXY(5, scr_y);
                 printnum(filelen);
                 transfer(fn, inbuf);
                 checkscroll();
@@ -625,13 +582,14 @@ retrynext:
     while (*fn != 0);
     
 closeconn:
-    scr_y += 2;
+    SETXY(0, scr_y+2);
     checkscroll();
+    /*
     if (atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf))
     {
-        print("Close failed");
         goto bailout;
-    }
+    }*/
+    cipxfer("Bye", 3, inbuf, &len, &dp);
     if (scr_y > 16)
     {
         scrollup();
@@ -639,6 +597,12 @@ closeconn:
     }
     print("All done");
 bailout:
-    atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
+    //atcmd("AT+CIPMODE=0\r\n", "OK", 0, inbuf); // restore CIP mode
+    //atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
     writenextreg(0x07, nextreg7); // restore cpu speed
+    // reset esp
+    writenextreg(0x02, 128);
+    // wait for 5+ frames
+    for (len = 0; len < 10000; len++);
+    writenextreg(0x02, 0);
 }
