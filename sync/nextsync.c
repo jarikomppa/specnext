@@ -215,6 +215,21 @@ void flush_uart()
     }
 } 
 
+// Do the maximum effort to empty the uart.
+void flush_uart_hard()
+{
+    unsigned short timeout = TIMEOUT;
+    while (timeout)
+    {
+        if (readuarttx() & 1)
+        {
+            readuartrx();
+            timeout = TIMEOUT;
+        }
+        timeout--;
+    }
+}
+
 void send(const char *b, unsigned char bytes)
 {
     unsigned char t;
@@ -285,6 +300,7 @@ char bufinput(char *buf, unsigned short *len)
                     }
                     timeout--;
                 }
+                return 1;
             }
         }                
         timeout--;
@@ -312,6 +328,33 @@ unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
     return 1;
 }
 
+unsigned char atcmd_cipsend(char *cmd, char *buf)
+{
+    unsigned short len = 0;
+    unsigned short timeout = TIMEOUT;
+    unsigned char l = 0;
+        
+    while (cmd[l]) l++;
+retrycipsend:
+    flush_uart();
+    send(cmd, l);
+
+    while (timeout && len < 2048)
+    {        
+        len += receive(buf + len);
+        timeout--;
+        if (strinstr(buf, ">", len, 1))
+            return 0;
+        if (strinstr(buf, "busy", len, 4))
+        {
+            len = 0;
+            goto retrycipsend;
+        }
+    }    
+    return 1;
+}
+
+
 void noconfig()
 {
         // 12345678901234567890123456789012
@@ -324,20 +367,23 @@ void noconfig()
           "address)", 0, 3);
 }
 
-void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
+// max cmdlen = 9
+void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
-    const char *cccmd="AT+CIPSEND=12345\r\n"; // 5 digits should be enough. (heck, two probably are)
-    char *cipsendcmd=(char*)cccmd;
-    char p = 11; // offset to digits in cccmd
-    p += uitoa(cmdlen, cipsendcmd + p);
-    cipsendcmd[p] = '\r'; p++;
-    cipsendcmd[p] = '\n'; p++;
-    cipsendcmd[p] = 0;
-    atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
+    const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
+    char *cipsendcmd = (char *)cipsendcmd_c;
+    cipsendcmd[13] = '0' + cmdlen;
+retrycipsend:
+    atcmd_cipsend(cipsendcmd, output); // cipsend prompt
     *len = 0;
+    if (atcmd(cmd, "SEND OK", 7, output))
+    {
+        flush_uart_hard();
+        goto retrycipsend;
+    }
     send(cmd, cmdlen);
     if (bufinput(output, len)) return;
-    
+    flush_uart();
     // Buffer should have "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
     // followed by the input. The input should start with two bytes
     // for packet size, payload, and then two bytes of checksums.
@@ -350,21 +396,6 @@ void cipxfer(char *cmd, unsigned short cmdlen, unsigned char *output, unsigned s
     //output++;
     *dataptr = output + 2 + 1; // skip size bytes
     *len -= 2; // reduce size bytes    
-}
-
-// Do the maximum effort to empty the uart.
-void flush_uart_hard()
-{
-    unsigned short timeout = TIMEOUT;
-    while (timeout)
-    {
-        if (readuarttx() & 1)
-        {
-            readuartrx();
-            timeout = TIMEOUT;
-        }
-        timeout--;
-    }
 }
 
 char gofast(char *inbuf, char y)
@@ -428,7 +459,7 @@ void transfer(char *fn, char *inbuf, char y)
         {
             cipxfer("Get", 3, inbuf, &len, &dp);
 retry:
-            if (checksum(dp, len-2)==0)
+            if (len && checksum(dp, len-2)==0)
             {
                 received += len - 2;
                 // skip every second print for tiny speedup (except the last print)
@@ -463,6 +494,7 @@ void main()
     unsigned char nextreg7;
     char fastuart = 0;
     char filehandle;
+    char retrycount;
     
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
@@ -473,7 +505,7 @@ void main()
           
     y = 0;
     
-    y = print("NextSync 0.7 by Jari Komppa", 0, y);
+    y = print("NextSync 0.8 by Jari Komppa", 0, y);
     y = print("http://iki.fi/sol", 0, y);
     y++;
  
@@ -547,12 +579,22 @@ void main()
         print("Unable to connect", 0, y);
         goto bailout;
     }
+
+    y = print("Connected", 0, y);
     
+    retrycount = 0;
+retryhandshake:
     // Check server version/request protocol
     cipxfer("Sync2", 5, inbuf, &len, &dp);
 
     if (memcmp(dp, "NextSync2", 9) != 0)
     {
+        retrycount++;
+        if (retrycount < 20)
+        {
+            flush_uart_hard();
+            goto retryhandshake;
+        }
         y = print("Server version mismatch", 0, y);
         dp[len] = 0;
         y = print(dp, 0, y);
