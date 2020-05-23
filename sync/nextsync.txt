@@ -135,6 +135,11 @@ Troubleshooting
 "Can't talk to esp" 
     - Is the wifi module installed?
     - Is the wifi module configured?
+    - Is the wifi module awake?
+      If you've run the .espsleep command or otherwise
+      put the wifi module to sleep, you need to wake it up before
+      using .sync. Remember that the wifi module takes significant
+      amount of time to wake up. 
     - The wifi module is probably not in its default bit rate. 
       Try cold boot (completely power off), or if you'd rather not, you can type
       .uart -f to reset the bit rate. 
@@ -173,8 +178,9 @@ Python error:
 
     - You're running Windows and your host name has non-ascii characters.
       This is a known python issue from 2016. Either rename your computer,
-      or you can try setting the PYTHONLEGACYWINDOWSFSENCODING environment 
-      variable to 1.
+      (since hostnames shouldn't actually include non-ascii characters like
+      umlauts) or you can try setting the PYTHONLEGACYWINDOWSFSENCODING 
+      environment variable to 1.
       
 Transfers sometimes stall for several seconds, then continue:
     - This just seems to happen. I have no answer to this at this time.    
@@ -184,10 +190,17 @@ Server options
 --------------
 
 The server creates syncpoint.dat file which it uses to detect new files to sync.
-If you manage to create files with older timestamp than this, they won't be
-synced.
+The file contains list of files synced, so even if you manage to create
+files that are older, they will be synced. All known files that are newer
+than the syncpoint file are also synced.
 
-To force sync all of the files, delete this file. 
+To force sync all of the files (once), delete this file.
+
+If you want to always sync all of the files for whatever reason
+(maybe you're running a specnext copyparty or something?) you can
+tell the server to ignore the syncpoint by saying:
+
+nextsync.py -a
 
 To make the server ignore some files and never sync them, add the filenames
 (or file masks) to the syncignore.txt file. For example:
@@ -212,7 +225,6 @@ turns the filenames to c:/foo/bar. The same goes for -d and -e.
 The ram disk m: cannot be used as a sync target, and the same goes for
 mounted .dsk or .p3m images. This is a limitation of the esxdos interface
 sync is based on.
-
 
 
 Protocol
