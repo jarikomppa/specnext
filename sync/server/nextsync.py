@@ -19,24 +19,28 @@ VERSION = "NextSync2"
 IGNOREFILE = "syncignore.txt"
 SYNCPOINT = "syncpoint.dat"
 
-drive = '/'
+opt_drive = '/'
+opt_always_sync = False
 
-def touch(fname):
-    if os.path.exists(fname):
-        os.utime(fname, None)
-    else:
-        open(fname, 'a').close()
+def update_syncpoint(knownfiles):
+    with open(SYNCPOINT, 'w') as f:
+        for x in knownfiles:
+            f.write(f"{x}\n")
 
 def agecheck(f):
     if not os.path.isfile(SYNCPOINT):
         return False
     ptime = os.path.getmtime(SYNCPOINT)
-    ftime = os.path.getmtime(f)
-    if ftime > ptime:
+    mtime = os.path.getmtime(f)
+    if mtime > ptime:
         return False
     return True
 
 def getFileList():    
+    knownfiles = []
+    if os.path.isfile(SYNCPOINT):
+        with open(SYNCPOINT) as f:
+            knownfiles = f.read().splitlines()
     ignorelist = []
     if os.path.isfile(IGNOREFILE):
         with open(IGNOREFILE) as f:
@@ -49,8 +53,10 @@ def getFileList():
             for i in ignorelist:
                 if fnmatch.fnmatch(g, i):
                     ignored = True
-            if agecheck(g):
-                ignored = True
+            if not opt_always_sync:
+                if g in knownfiles:
+                    if agecheck(g):
+                        ignored = True
             if not ignored:
                 stats = os.stat(g)
                 r.append([g, stats.st_size])
@@ -122,6 +128,10 @@ def main():
             conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
             f = getFileList()
             print(f'{timestamp()} | Sync file list has {len(f)} files.')
+            knownfiles = []
+            if os.path.isfile(SYNCPOINT):
+                with open(SYNCPOINT) as kf:
+                    knownfiles = kf.read().splitlines()
             fn = 0;
             filedata = b''
             packet = b''
@@ -145,16 +155,19 @@ def main():
                             print(f"{timestamp()} | Nothing (more) to sync")
                             packet = b'\x00\x00\x00\x00\x00' # end of.
                             sendpacket(conn, packet)
-                            touch(SYNCPOINT) # Sync complete, set sync point
+                            # Sync complete, set sync point
+                            update_syncpoint(knownfiles)
                         else:
-                            specfn = drive + f[fn][0].replace('\\','/')
+                            specfn = opt_drive + f[fn][0].replace('\\','/')
                             print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
                             packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
                             sendpacket(conn,packet)
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
+                            if f[fn][0] not in knownfiles:
+                                knownfiles.append(f[fn][0])
                             fileofs = 0
-                            fn+=1                                                        
+                            fn+=1
                     elif data == b"Get":
                         bytecount = 1024
                         if bytecount + fileofs > len(filedata):
@@ -174,14 +187,17 @@ def main():
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
         print(f"{timestamp()} | Disconnected")
         print()
+            
 
 for x in sys.argv[1:]:
     if x == '-c':
-        drive = 'c:/'
+        opt_drive = 'c:/'
     elif x == '-d':
-        drive = 'd:/'
+        opt_drive = 'd:/'
     elif x == '-e':
-        drive = 'e:/'
+        opt_drive = 'e:/'
+    elif x == '-a':
+        opt_always_sync = True
     else:
         print(f"Unknown parameter: {x}")
         print(
@@ -189,9 +205,10 @@ for x in sys.argv[1:]:
         Run without parameters for normal action. See nextsync.txt for details.
         
         Optional parameters:
-        -c - prefix filenames with c: (i.e, /dot/foo becomes c:/dot/foo)
-        -d - prefix filenames with d: (i.e, /dot/foo becomes d:/dot/foo)
-        -e - prefix filenames wieh e: (i.e, /dot/foo becomes e:/dot/foo)
+        -a - Always sync, regardless of timestamps (doesn't skip ignore file)
+        -c - Prefix filenames with c: (i.e, /dot/foo becomes c:/dot/foo)
+        -d - Prefix filenames with d: (i.e, /dot/foo becomes d:/dot/foo)
+        -e - Prefix filenames wieh e: (i.e, /dot/foo becomes e:/dot/foo)
         """)
         quit()
         
