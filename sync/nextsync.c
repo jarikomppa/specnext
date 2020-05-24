@@ -574,6 +574,7 @@ restart:
                 fclose(filehandle);
                 len = 0;
                 packetno = 0;
+                received = 0;
                 goto restart;
             }
 retry:
@@ -676,9 +677,15 @@ void main()
         flush_uart_hard();
         if (atcmd("\r\n", "ERROR", 5, inbuf)) 
         {
-            print("Can't talk to esp");
+            print("Can't talk to esp.\nResetting esp, try again.");
+            // reset esp
+            writenextreg(0x02, 128);
+            // wait for 5+ frames
+            for (len = 0; len < 10000; len++);
+            writenextreg(0x02, 0);
             goto bailout;
         }
+        
         // if we get this far, esp was already at the fast rate
         // (which can happen if you reset the next while
         // transfer is going on)

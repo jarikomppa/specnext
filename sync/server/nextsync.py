@@ -5,6 +5,8 @@
 # released under the unlicense, see http://unlicense.org 
 # (practically public domain) 
 
+import random
+
 import datetime
 import fnmatch
 import socket
@@ -67,8 +69,9 @@ def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def sendpacket(conn, payload, packetno):
-    checksum0 = 0
-    checksum1 = 0    
+    checksum0 = 0; # random.choice([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]) # 5%
+    checksum1 = 0
+    # packetno -= random.choice([0]*99+[1]) # 1%
     for x in payload:
         checksum0 = (checksum0 ^ x) & 0xff
         checksum1 = (checksum1 + checksum0) & 0xff
@@ -167,6 +170,7 @@ def main():
                             print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
                             packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
                             sendpacket(conn, packet, 0)
+                            totalbytes += len(packet)
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
                             if f[fn][0] not in knownfiles:
@@ -177,18 +181,20 @@ def main():
                     elif data == b"Get":
                         bytecount = 1024
                         if bytecount + fileofs > len(filedata):
-                            bytecount = len(filedata) - fileofs
-                        totalbytes += bytecount
+                            bytecount = len(filedata) - fileofs                        
                         packet = filedata[fileofs:fileofs+bytecount]
                         print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
                         sendpacket(conn, packet, packetno)
+                        totalbytes += len(packet)
                         fileofs += bytecount
                         packetno += 1
                     elif data == b"Retry":
                         print(f"{timestamp()} | Resending")
                         sendpacket(conn, packet, packetno - 1)
+                        totalbytes -= len(packet)
                     elif data == b"Restart":
                         print(f"{timestamp()} | Restarting")
+                        totalbytes -= fileofs
                         fileofs = 0
                         packetno = 0
                         sendpacket(conn, str.encode("Back"), 0)
