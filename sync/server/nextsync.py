@@ -20,6 +20,13 @@ PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
 VERSION = "NextSync3"
 IGNOREFILE = "syncignore.txt"
 SYNCPOINT = "syncpoint.dat"
+MAX_PAYLOAD = 1024
+
+# If you want to be really safe (but transfer slower), use this:
+#MAX_PAYLOAD = 256
+
+# The next uart has a buffer of 512 bytes; sending packets of 256 bytes will always
+# fit and there won't be any buffer overruns. However, it's much slower.
 
 opt_drive = '/'
 opt_always_sync = False
@@ -81,7 +88,7 @@ def sendpacket(conn, payload, packetno):
         + (checksum1 & 0xff).to_bytes(1, byteorder="big")
         + (packetno & 0xff).to_bytes(1, byteorder="big"))
     conn.sendall(packet)
-    print(f'{timestamp()} | Packet sent: {len(packet)} bytes, payload: {len(payload)} bytes, checksums: {checksum0}, {checksum1}, packetno: {packetno}')
+    print(f'{timestamp()} | Packet sent: {len(packet)} bytes, payload: {len(payload)} bytes, checksums: {checksum0}, {checksum1}, packetno: {packetno & 0xff}')
           
 def warnings():
     print()
@@ -126,6 +133,9 @@ def main():
         print(f"{timestamp()} | NextSync listening to port {PORT}")
         totalbytes = 0
         starttime = 0
+        retries = 0
+        packets = 0
+        restarts = 0
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", PORT))
             s.listen()
@@ -157,18 +167,24 @@ def main():
                     print(f'{timestamp()} | Data received: "{decoded}", {len(decoded)} bytes')
                     if data == b"Sync3":
                         print(f'{timestamp()} | Sending "{VERSION}"')
-                        sendpacket(conn, str.encode(VERSION), 0)
+                        packet = str.encode(VERSION)
+                        sendpacket(conn, packet, 0)
+                        packets += 1
+                        totalbytes += len(packet)
                     elif data == b"Next":
                         if fn >= len(f):
                             print(f"{timestamp()} | Nothing (more) to sync")
                             packet = b'\x00\x00\x00\x00\x00' # end of.
+                            packets += 1
                             sendpacket(conn, packet, 0)
+                            totalbytes += len(packet)
                             # Sync complete, set sync point
                             update_syncpoint(knownfiles)
                         else:
                             specfn = opt_drive + f[fn][0].replace('\\','/')
                             print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
                             packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
+                            packets += 1
                             sendpacket(conn, packet, 0)
                             totalbytes += len(packet)
                             with open(f[fn][0], 'rb') as srcfile:
@@ -178,21 +194,24 @@ def main():
                             fileofs = 0
                             packetno = 0
                             fn+=1
-                    elif data == b"Get":
-                        bytecount = 1024
+                    elif data == b"Get":                        
+                        bytecount = MAX_PAYLOAD
                         if bytecount + fileofs > len(filedata):
                             bytecount = len(filedata) - fileofs                        
                         packet = filedata[fileofs:fileofs+bytecount]
                         print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
+                        packets += 1
                         sendpacket(conn, packet, packetno)
                         totalbytes += len(packet)
                         fileofs += bytecount
                         packetno += 1
                     elif data == b"Retry":
+                        retries += 1
                         print(f"{timestamp()} | Resending")
                         sendpacket(conn, packet, packetno - 1)
                         totalbytes -= len(packet)
                     elif data == b"Restart":
+                        restarts += 1
                         print(f"{timestamp()} | Restarting")
                         totalbytes -= fileofs
                         fileofs = 0
@@ -202,8 +221,11 @@ def main():
                         print(f"{timestamp()} | Closing connection")
                         talking = False
                     elif data == b"Sync2" or data == b"Sync1" or data == b"Sync":
+                        packet = str.encode("Nextsync 0.8 or later needed")
                         print(f'{timestamp()} | Old version requested')
-                        sendpacket(conn, str.encode("Nextsync 0.8 or later needed"), 0)
+                        sendpacket(conn, packet, 0)
+                        packets += 1
+                        totalbytes += len(packet)
                     else:
                         print(f"{timestamp()} | Unknown command")
                         sendpacket(conn, str.encode("Error"), 0)
@@ -211,6 +233,7 @@ def main():
                 time.sleep(1); # allow the next to close first        
         deltatime = endtime - starttime
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
+        print(f"{timestamp()} | packets: {packets}, retries: {retries}, restarts: {restarts}")
         print(f"{timestamp()} | Disconnected")
         print()                
         if opt_sync_once:
@@ -228,6 +251,10 @@ for x in sys.argv[1:]:
         opt_always_sync = True
     elif x == '-o':
         opt_sync_once = True
+    elif x == '-s':
+        MAX_PAYLOAD = 256
+    elif x == '-u':
+        MAX_PAYLOAD = 1455
     else:
         print(f"Unknown parameter: {x}")
         print(
@@ -237,6 +264,10 @@ for x in sys.argv[1:]:
         Optional parameters:
         -a - Always sync, regardless of timestamps (doesn't skip ignore file)
         -o - Sync once, then quit. Default is to keep the sync loop running.
+        -s - Use safe payload size (256 bytes). Slower, but more robust. 
+             Use this if you get a lot of retries.
+        -u - To live on the edge, you can try to use really unsafe payload
+             size (1455 bytes). Faster, but more likely to break.
         -c - Prefix filenames with c: (i.e, /dot/foo becomes c:/dot/foo)
         -d - Prefix filenames with d: (i.e, /dot/foo becomes d:/dot/foo)
         -e - Prefix filenames wieh e: (i.e, /dot/foo becomes e:/dot/foo)
