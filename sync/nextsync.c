@@ -10,6 +10,18 @@
 
 #define TIMEOUT 10000
 
+//#define DEBUGMODE
+//#define DISKLOG
+
+#ifdef DEBUGMODE
+#define SETX(x) 
+#define SETY(y) 
+#else
+#define SETX(x) scr_x = (x)
+#define SETY(y) scr_y = (y)
+#endif
+
+
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
 __sfr __at 0xfe gPort254;
@@ -41,6 +53,7 @@ extern unsigned short framecounter;
 extern char *cmdline;
 extern unsigned char scr_x;
 extern unsigned char scr_y;
+extern char dbg;
 
 unsigned char parse_cmdline(char *f)
 {
@@ -76,6 +89,21 @@ void memset(char *a, char b, unsigned short l)
         i++;
     }
 }
+
+#ifdef DEBUGMODE
+void drawcharx(unsigned char c)
+{
+    unsigned char i;
+    unsigned char *p = (unsigned char*)yofs[scr_y] + scr_x;
+    unsigned short ofs = c * 8;
+    for (i = 0; i < 8; i++)
+    {
+        *p = fona_png[ofs] ^ 0xff;
+        ofs++;
+        p += 256;
+    }
+}
+#endif
 
 void drawchar(unsigned char c)
 {
@@ -127,6 +155,9 @@ void checkscroll()
 
 void print(char * t)
 {
+#ifdef DEBUGMODE
+t;
+#else
     while (*t)
     {
         if (*t == '\n')
@@ -150,7 +181,34 @@ void print(char * t)
     scr_y++;
     scr_x = 0;
     checkscroll();
+#endif
 }
+
+#ifdef DEBUGMODE
+void putchar(char t)
+{
+    drawchar(t);
+    scr_x++;
+    if (scr_x == 32)
+    {
+        scr_x = 0;
+        scr_y++;
+    }
+    checkscroll();
+}
+
+void putcharx(char t)
+{
+    drawcharx(t);
+    scr_x++;
+    if (scr_x == 32)
+    {
+        scr_x = 0;
+        scr_y++;
+    }
+    checkscroll();
+}
+#endif
 
 unsigned char uitoa(unsigned long v, char *b)
 {
@@ -199,9 +257,19 @@ void printnum(unsigned long v)
 
 void flush_uart()
 {
+#ifdef DISKLOG
+    fwrite(dbg, "[fu]", 4);
+#endif    
     while (readuarttx() & 1)
     {
+#ifdef DEBUGMODE
+        putcharx(readuartrx());
+#elif defined(DISKLOG)
+        char t = readuartrx();
+        fwrite(dbg, &t, 1);
+#else        
         readuartrx();
+#endif        
     }
 } 
 
@@ -209,20 +277,62 @@ void flush_uart()
 void flush_uart_hard()
 {
     unsigned short timeout = TIMEOUT;
+#ifdef DISKLOG
+    fwrite(dbg, (char*)"[fuh]", 5);
+#endif    
     while (timeout)
     {
         if (readuarttx() & 1)
         {
+#ifdef DEBUGMODE
+            putcharx(readuartrx());
+#elif defined(DISKLOG)
+            char t = readuartrx();
+            fwrite(dbg, &t, 1);
+#else        
             readuartrx();
+#endif        
             timeout = TIMEOUT;
         }
         timeout--;
     }
 }
 
+/*
+#if defined(DEBUGMODE) || defined(DISKLOG)
+unsigned short receive(unsigned char *b)
+{
+    unsigned short count = 0;
+#ifdef DISKLOG
+    unsigned char *ob = b;
+#endif    
+#ifdef DISKLOG
+    fwrite(dbg, (char*)"[r]", 3);
+#endif    
+    while (readuarttx() & 1)
+    {
+        *b = readuartrx();
+        count++;
+#ifdef DEBUGMODE
+        putcharx(*b);
+#endif
+        b++;
+    }
+#ifdef DISKLOG
+    fwrite(dbg, ob, count);
+#endif    
+    return count;
+} 
+#endif
+*/
+
 void send(const char *b, unsigned char bytes)
 {
     unsigned char t;
+#ifdef DISKLOG
+    fwrite(dbg, (char*)"[s]", 3);
+    fwrite(dbg, (char*)b, bytes);
+#endif    
     while (bytes)
     {
         // busy wait until byte is transmitted
@@ -273,28 +383,41 @@ char bufinput(char *buf, unsigned short *len)
         {
             if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
             {
+                i++;
                 // Trying to keep this loop relatively tight, because
                 // the uart fifo overrun is a real problem.
                 while (timeout && ofs < 2048)
                 {
                     ofs += receive(buf + ofs);
+                    if (ofs >= i + 2)
+                    {
+                        hdr = ((buf[i]<<8) | buf[i+1]);
+                        destsize = hdr + i;
+                    }
                     if (ofs >= destsize)
                     {
                         *len = hdr;
+#ifdef DISKLOG
+                        fwrite(dbg, "[bi]", 4);
+                        fwrite(dbg, buf, ofs);
+#endif                
                         return 0;
-                    }
-                    if (ofs > i + 2)
-                    {
-                        hdr = ((buf[i+1]<<8) | buf[i+2]);
-                        destsize = hdr + i + 1;
                     }
                     timeout--;
                 }
+#ifdef DISKLOG
+                fwrite(dbg, "[bi1]", 5);
+                fwrite(dbg, buf, ofs);
+#endif                
                 return 1;
             }
         }                
         timeout--;
     }    
+#ifdef DISKLOG
+    fwrite(dbg, "[bi0]", 5);
+    fwrite(dbg, buf, ofs);
+#endif                
     return 1;
 }
 
@@ -313,36 +436,28 @@ retryatcmd:
     {        
         len += receive(buf + len);
         timeout--;
+        if (strinstr(buf, expect, len, expectlen))
+        {
+#ifdef DISKLOG
+        fwrite(dbg, "[at]", 4);
+        fwrite(dbg, buf, len);
+#endif
+            return 0;
+        }
         if (strinstr(buf, "busy", len, 4))
+        {
+#ifdef DISKLOG
+        fwrite(dbg, "[atb]", 5);
+        fwrite(dbg, buf, len);
+#endif
+            len = 0;
             goto retryatcmd;
-        if (strinstr(buf, expect, len, expectlen))
-            return 0;
+        }
     }    
-    return 1;
-}
-
-unsigned char atcmd_noretry(char *cmd, char *expect, char expectlen, char *buf)
-{
-    unsigned short len = 0;
-    unsigned short timeout = TIMEOUT;
-    unsigned char l = 0;
-        
-    while (cmd[l]) l++;
-
-    flush_uart();
-    send(cmd, l);
-
-    while (timeout && len < 2048)
-    {        
-        len += receive(buf + len);
-        timeout--;
-        if (strinstr(buf, expect, len, expectlen))
-            return 0;
-        if (strinstr(buf, "busy", len, 4))
-            return 1;
-        if (strinstr(buf, "ERROR", len, 5))
-            return 1;
-    }    
+#ifdef DISKLOG
+    fwrite(dbg, "[at0]", 5);
+    fwrite(dbg, buf, len);
+#endif
     return 1;
 }
 
@@ -364,14 +479,9 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
     const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
     char *cipsendcmd = (char *)cipsendcmd_c;
     cipsendcmd[13] = '0' + cmdlen;
-retrycipsend:
     atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
     *len = 0;
-    if (atcmd_noretry(cmd, "SEND OK", 7, output))
-    {
-        flush_uart_hard();
-        goto retrycipsend;
-    }
+    send(cmd, cmdlen);   
     if (bufinput(output, len)) return;
     flush_uart();
     // Buffer should have "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
@@ -392,9 +502,6 @@ char gofast(char *inbuf)
 {
     atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
     setupuart(12);
-    // Tests show that upping the uart speed didn't actually
-    // affect the transfer rate. Let's keep it to 10x std
-    // for stability.
     //atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
     //setupuart(14);
     // Note that if you enable the above, also change the 
@@ -455,14 +562,14 @@ retry:
                 // skip every second print for tiny speedup (except the last print)
                 if (len <= 2 || (received & 1024) == 0) 
                 {
-                    scr_x = 5;
+                    SETX(5);
                     printnum(received);
-                    scr_y -=1;
+                    SETY(scr_y -1);
                 }
                 fwrite(filehandle, dp, len-2);
             }
             else
-            {
+            {                
                 flush_uart_hard();
                 cipxfer("Retry", 5, inbuf, &len, &dp);
                 goto retry;
@@ -496,18 +603,18 @@ void main()
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,4,24*32);
           
-    scr_y = 0;
+    SETX(0);
     
     print("NextSync 0.8 by Jari Komppa");
     print("http://iki.fi/sol");
-    scr_y++;
+    SETY(scr_y+1);
  
     len = parse_cmdline(fn);
     if (*fn)
     {
         print("Setting server to:");
         print(fn);
-        print("-> "); scr_y--; scr_x = 3;
+        print("-> "); SETY(scr_y-1); SETX(3);
         print((char*)conffile);
         filehandle = createfilewithpath((char*)conffile);
         if (filehandle == 0)
@@ -531,6 +638,9 @@ void main()
     fclose(filehandle);
     fn[len] = 0;
  
+#ifdef DISKLOG
+    dbg = createfilewithpath((char*)"syncdebug.dat");
+#endif 
     // select esp uart, set 17-bit prescalar top bits to zero
     writeuartctl(16); 
     // set the baud rate (default)
@@ -552,13 +662,13 @@ void main()
         // transfer is going on)
     }
 
-    //if (!fastuart && gofast(inbuf))
-//        goto bailout;
+    if (!fastuart && gofast(inbuf))
+        goto bailout;
 
     // Try disconnecting just in case.
     atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
 
-    print("Connecting to "); scr_y--; scr_x = 14;
+    print("Connecting to "); SETY(scr_y-1); SETX(14);
     print(fn);
 
     // Build the cipstart command in the huge buffer we have,
@@ -591,7 +701,7 @@ retryhandshake:
         print("Server version mismatch");
         dp[len] = 0;
         print(dp);
-        printnum(len); scr_y++;
+        printnum(len); SETY(scr_y+1);
         goto closeconn;
     }
     
@@ -608,8 +718,8 @@ retrynext:
             fn[fnlen] = 0;
             if (*fn)
             {
-                print("File:\nSize:\nXfer:"); scr_x = 5; scr_y -= 3;
-                print(fn); scr_x = 5;
+                print("File:\nSize:\nXfer:"); SETX(5); SETY(scr_y - 3);
+                print(fn); SETX(5);
                 printnum(filelen);
                 transfer(fn, inbuf);
                 checkscroll();
@@ -625,13 +735,9 @@ retrynext:
     while (*fn != 0);
     
 closeconn:
-    scr_y += 2;
+    SETY(scr_y + 2);
     checkscroll();
-    if (atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf))
-    {
-        print("Close failed");
-        goto bailout;
-    }
+    atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf);
     if (scr_y > 16)
     {
         scrollup();
@@ -641,4 +747,7 @@ closeconn:
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
     writenextreg(0x07, nextreg7); // restore cpu speed
+#ifdef DISKLOG
+    fclose(dbg);
+#endif    
 }

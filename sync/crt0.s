@@ -3,6 +3,7 @@
 		.globl _cmdline
 		.globl _scr_x
 		.globl _scr_y
+		.globl _dbg
 
 		.area _HEADER(ABS)
 _crt0_entry:	
@@ -90,6 +91,7 @@ _pagehandle: .word 0
 _mmu4: .db 0
 _scr_x: .db 0
 _scr_y: .db 0
+_dbg: .db 0
 
 
 _endof_crt0:
