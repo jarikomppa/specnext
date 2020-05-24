@@ -1,4 +1,4 @@
-NextSync 0.7
+NextSync 0.8
 by Jari Komppa 2020
 http://iki.fi/sol
 
@@ -73,7 +73,7 @@ DESKTOP SIDE SETUP
 3.  Run the server specnext.py. It should show something like the
     following:
 
-        NextSync server, protocol version NextSync2
+        NextSync server, protocol version NextSync3
         by Jari Komppa 2020
 
         Running on host: DESKTOP-NEW2020
@@ -102,11 +102,13 @@ ZX SPECTRUM NEXT SIDE SETUP
 6. Make sure the WIFI module is working on the next. If you've never
    used it, run the /demos/esp/wifi.bas from the spectrum next sd card.
    After setting up, you can try /demos/NXtel to see if you can 
-   connect somewhere. 
+   connect somewhere. (Note that not all ZX Spectrum Next models come
+   with a WIFI module. One can be installed, though; it's a solderless
+   operation).
 
 7. Open next command line and type .sync and hit enter. It should complain
    that the configuration file is missing.
-   
+
 8. Type .sync followed by either your server's host name or ip address.
    Either should work. If more than one ip address is listed, it's possible
    you are on several networks, or have installed VirtualBox or some other
@@ -124,7 +126,9 @@ the syncpoint.dat file that the server creates.
     
 To close the server, either just close its window, or hit control-break.
 Control-c doesn't seem to work, at least in windows.
-    
+
+If you're having problems, try syncslow.
+If you're NOT having problems, try syncfast.   
     
     
 Troubleshooting
@@ -132,18 +136,11 @@ Troubleshooting
 
     - When in doubt, cold boot the next, close server and restart it.
 
-"Can't talk to esp" 
-    - Is the wifi module installed?
+"Can't talk to esp. Resetting esp, try again."
+    - Try again. Maybe it works the next time.
+    - Does your next have a  wifi module installed?
     - Is the wifi module configured?
-    - Is the wifi module awake?
-      If you've run the .espsleep command or otherwise
-      put the wifi module to sleep, you need to wake it up before
-      using .sync. Remember that the wifi module takes significant
-      amount of time to wake up. 
-    - The wifi module is probably not in its default bit rate. 
-      Try cold boot (completely power off), or if you'd rather not, you can type
-      .uart -f to reset the bit rate. 
-      To exit the '.uart' press symbol shift and space.
+    - Does NxTel work?
       
 "Can't talk to esp fast"
     - Shouldn't happen. Do a cold boot and try again.
@@ -159,14 +156,16 @@ Troubleshooting
 
 "Server version mismatch"
     - Use the same version of server and .sync
+    - Try syncslow.
     - If you do and still get this, something is seriously wrong.
+      This is the first actual communication between the next and
+      the server, so if any issues occur, it's most likely here.
 
 "Unable to open file"
     - Can happen if you're trying to sync sync itself, or if the files are open
-      otherwise, write protected or broken or something else went wrong.
-
-"Close failed"
-    - Server probably closed the connection. Shouldn't happen.
+      otherwise, write protected, broken or something else went wrong.
+    - While nextsync tries to create directories, this doesn't always work
+      out. If the destination directory doesn't exist, it may lead to this error.
 
 Python error:
     Traceback (most recent call last):
@@ -182,8 +181,17 @@ Python error:
       umlauts) or you can try setting the PYTHONLEGACYWINDOWSFSENCODING 
       environment variable to 1.
       
-Transfers sometimes stall for several seconds, then continue:
-    - This just seems to happen. I have no answer to this at this time.    
+Transfer hangs:
+    - I've seen this happen rarely. Restart the next and the server,
+      and try syncing again. If you see a lot of these, try either the
+      safe packet size option for the server (-s flag), or try syncslow.
+
+A lot of retries/restarts:
+    - Try syncslow. Alternatively (or in addition), you can try running
+      the server with the -s option, which shrinks the packet size
+      down to 256 bytes (from 1024 bytes). This is slower, but will
+      always fit in the next's buffers.
+
 
 
 Server options
@@ -201,6 +209,11 @@ If you want to always sync all of the files for whatever reason
 tell the server to ignore the syncpoint by saying:
 
 nextsync.py -a
+
+By default the server keeps running, but if you want to run only one
+sync cycle and quit, you can do:
+
+nextsync.py -o
 
 To make the server ignore some files and never sync them, add the filenames
 (or file masks) to the syncignore.txt file. For example:
@@ -226,14 +239,61 @@ The ram disk m: cannot be used as a sync target, and the same goes for
 mounted .dsk or .p3m images. This is a limitation of the esxdos interface
 sync is based on.
 
+If you're seeing a lot of retries and/or restarts, you may want to
+try the "safe" payload size option:
+
+nextsync.py -s
+
+This shrinks the payload size to 256 bytes, which will fit into the
+next's buffers.
+
+To go the other way and squeeze just a little bit more transfer rate,
+you can tell the server to send slightly oversized "unsafe" packets:
+
+nextsync.py -u
+
+
+
+Benchmarks
+----------
+
+The following values are from single runs each, so they're not all
+that scientific. Network hickups, sd card hickups, errors (retries,
+restarts), etc. may affect transfer speed. Also your wifi module
+may be different from mine, and your network setup definitely is.
+
+Single large file
+214.70 kilobytes transferred in  4.45 seconds, 48.22 kBps - syncfast, -u
+214.70 kilobytes transferred in  4.92 seconds, 43.66 kBps - syncfast
+214.70 kilobytes transferred in  8.35 seconds, 25.73 kBps - syncfast, -s
+214.70 kilobytes transferred in  5.38 seconds, 39.94 kBps - sync, -u
+214.70 kilobytes transferred in  5.69 seconds, 37.74 kBps - sync
+214.70 kilobytes transferred in  9.35 seconds, 22.96 kBps - sync, -s
+214.70 kilobytes transferred in 23.37 seconds,  9.19 kBps - syncslow, -u
+214.70 kilobytes transferred in 24.21 seconds,  8.87 kBps - syncslow
+214.70 kilobytes transferred in 31.03 seconds,  6.92 kBps - syncslow, -s
+
+48 files of various sizes
+462.72 kilobytes transferred in 17.33 seconds, 26.71 kBps - syncfast, -u
+462.72 kilobytes transferred in 17.85 seconds, 25.93 kBps - syncfast
+462.72 kilobytes transferred in 25.28 seconds, 18.31 kBps - syncfast, -s
+462.72 kilobytes transferred in 18.94 seconds, 24.43 kBps - sync, -u
+462.72 kilobytes transferred in 19.86 seconds, 23.30 kBps - sync
+462.72 kilobytes transferred in 27.55 seconds, 16.80 kBps - sync, -s
+462.72 kilobytes transferred in 60.20 seconds,  7.69 kBps - syncslow, -u
+462.72 kilobytes transferred in 62.08 seconds,  7.45 kBps - syncslow
+462.72 kilobytes transferred in 75.41 seconds,  6.14 kBps - syncslow, -s
+
+
+
 
 Protocol
 --------
 
-The NextSync2 protocol works as follows:
+The NextSync3 protocol works as follows:
 
 All server sent packages are encapsulated with
-[2 bytes big endian whole packet size][payload][checksums, 2 bytes]
+[2 bytes big endian whole packet size][payload][checksums, 2 bytes][packet number, 1 byte]
 
 Where checksum1 and checksum2 are calculated by:
 checksum1=0
@@ -243,8 +303,8 @@ for every x in payload:
   checksum2 = checksum2 + checksum1
 
 Handshake:
-next: "Sync2"
-server:"NextSync2"
+next: "Sync3"
+server:"NextSync3"
 - To check that we're talking the same language
 
 Next file:
@@ -263,6 +323,16 @@ next:"Retry"
 server: resend previous payload
 - Note that this can also happen after 'Next' packet.
 - Retrying happens forever
+
+Restart:
+next:"Restart"
+server: "Back"
+- Used when nextsync notices packet number problem
+- Server rewinds file to the beginning
+
+next: "Sync", "Sync1", "Sync2"
+server: "Nextsync 0.8 or later needed"
+- For older protocol versions, the error string is sent
 
 Otherwise:
 next:???
