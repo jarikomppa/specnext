@@ -393,15 +393,25 @@ char bufinput(char *buf, unsigned short *len)
                     {
                         hdr = ((buf[i]<<8) | buf[i+1]);
                         destsize = hdr + i;
-                    }
-                    if (ofs >= destsize)
-                    {
-                        *len = hdr;
+                        while (timeout && ofs < 2048)
+                        {
+                            ofs += receive(buf + ofs);
+                            if (ofs >= destsize)
+                            {
+                                *len = hdr;
 #ifdef DISKLOG
-                        fwrite(dbg, "[bi]", 4);
+                                fwrite(dbg, "[bi]", 4);
+                                fwrite(dbg, buf, ofs);
+#endif                
+                                return 0;
+                            }
+                            timeout--;
+                        }
+#ifdef DISKLOG
+                        fwrite(dbg, "[bi2]", 5);
                         fwrite(dbg, buf, ofs);
 #endif                
-                        return 0;
+                        return 1;                    
                     }
                     timeout--;
                 }
@@ -500,12 +510,12 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
 
 char gofast(char *inbuf)
 {
-    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
-    setupuart(12);
-    //atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
-    //setupuart(14);
-    // Note that if you enable the above, also change the 
-    // fallback setupuart() call in main.
+    //#define FAST_UART_MODE 12
+    //atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+    #define FAST_UART_MODE 14    
+    atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
+
+    setupuart(FAST_UART_MODE);
     flush_uart_hard();
     if (atcmd("\r\n", "ERROR", 5, inbuf))
     {
@@ -545,6 +555,8 @@ void transfer(char *fn, char *inbuf)
     unsigned long received = 0;
     unsigned short len;
     unsigned char filehandle;
+    unsigned char packetno = 0;
+restart:
     filehandle = createfilewithpath(fn);
     if (filehandle == 0)
     {
@@ -555,18 +567,28 @@ void transfer(char *fn, char *inbuf)
         do
         {
             cipxfer("Get", 3, inbuf, &len, &dp);
-retry:
-            if (len && checksum(dp, len-2)==0)
+            if (dp[len-1] != packetno)
             {
-                received += len - 2;
+                flush_uart_hard();
+                cipxfer("Restart", 7, inbuf, &len, &dp);
+                fclose(filehandle);
+                len = 0;
+                packetno = 0;
+                goto restart;
+            }
+retry:
+            if (len && checksum(dp, len-3)==0)
+            {
+                received += len - 3;
                 // skip every second print for tiny speedup (except the last print)
-                if (len <= 2 || (received & 1024) == 0) 
+                if (len <= 3 || (received & 1024) == 0) 
                 {
                     SETX(5);
                     printnum(received);
                     SETY(scr_y -1);
                 }
-                fwrite(filehandle, dp, len-2);
+                fwrite(filehandle, dp, len-3);
+                packetno++;
             }
             else
             {                
@@ -575,7 +597,7 @@ retry:
                 goto retry;
             }
         } 
-        while (len > 2);
+        while (len > 3);
         fclose(filehandle);
     }
 }
@@ -650,7 +672,7 @@ void main()
     {
         // Maybe we're already going fast?
         fastuart = 1;
-        setupuart(12);
+        setupuart(FAST_UART_MODE);
         flush_uart_hard();
         if (atcmd("\r\n", "ERROR", 5, inbuf)) 
         {
@@ -688,12 +710,12 @@ void main()
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
-    cipxfer("Sync2", 5, inbuf, &len, &dp);
+    cipxfer("Sync3", 5, inbuf, &len, &dp);
 
-    if (memcmp(dp, "NextSync2", 9) != 0)
+    if (memcmp(dp, "NextSync3", 9) != 0)
     {
         retrycount++;
-        if (retrycount < 20)
+        if (retrycount < 5)
         {
             flush_uart_hard();
             goto retryhandshake;
@@ -710,7 +732,7 @@ retryhandshake:
 
         cipxfer("Next", 4, inbuf, &len, &dp);
 retrynext:
-        if (checksum(dp, len-2) == 0)
+        if (checksum(dp, len-3) == 0)
         {
             filelen = ((unsigned long)dp[0] << 24) | ((unsigned long)dp[1] << 16) | ((unsigned long)dp[2] << 8) | (unsigned long)dp[3];        
             fnlen = dp[4];
@@ -737,6 +759,7 @@ retrynext:
 closeconn:
     SETY(scr_y + 2);
     checkscroll();
+    cipxfer("Bye", 3, inbuf, &len, &dp);
     atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf);
     if (scr_y > 16)
     {

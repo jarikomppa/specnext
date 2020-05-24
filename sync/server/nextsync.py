@@ -15,7 +15,7 @@ import sys
 import os
 
 PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
-VERSION = "NextSync2"
+VERSION = "NextSync3"
 IGNOREFILE = "syncignore.txt"
 SYNCPOINT = "syncpoint.dat"
 
@@ -66,18 +66,19 @@ def getFileList():
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def sendpacket(conn, payload):
+def sendpacket(conn, payload, packetno):
     checksum0 = 0
     checksum1 = 0    
     for x in payload:
         checksum0 = (checksum0 ^ x) & 0xff
         checksum1 = (checksum1 + checksum0) & 0xff
-    packet = ((len(payload)+4).to_bytes(2, byteorder="big")
+    packet = ((len(payload)+5).to_bytes(2, byteorder="big")
         + payload
         + (checksum0 & 0xff).to_bytes(1, byteorder="big")
-        + (checksum1 & 0xff).to_bytes(1, byteorder="big"))
+        + (checksum1 & 0xff).to_bytes(1, byteorder="big")
+        + (packetno & 0xff).to_bytes(1, byteorder="big"))
     conn.sendall(packet)
-    print(f'{timestamp()} | Packet sent: {len(packet)} bytes, payload: {len(payload)} bytes, checksums: {checksum0}, {checksum1}')
+    print(f'{timestamp()} | Packet sent: {len(packet)} bytes, payload: {len(payload)} bytes, checksums: {checksum0}, {checksum1}, packetno: {packetno}')
           
 def warnings():
     print()
@@ -139,36 +140,39 @@ def main():
             packet = b''
             fileofs = 0
             totalbytes = 0
+            packetno = 0
             starttime = time.time()
+            endtime = starttime
             with conn:                
                 print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
-                working = True                
-                while working:
+                talking = True                
+                while talking:
                     data = conn.recv(1024)
                     if not data:
                         break
                     decoded = data.decode()
                     print(f'{timestamp()} | Data received: "{decoded}", {len(decoded)} bytes')
-                    if data == b"Sync2":
+                    if data == b"Sync3":
                         print(f'{timestamp()} | Sending "{VERSION}"')
-                        sendpacket(conn, str.encode(VERSION))
+                        sendpacket(conn, str.encode(VERSION), 0)
                     elif data == b"Next":
                         if fn >= len(f):
                             print(f"{timestamp()} | Nothing (more) to sync")
                             packet = b'\x00\x00\x00\x00\x00' # end of.
-                            sendpacket(conn, packet)
+                            sendpacket(conn, packet, 0)
                             # Sync complete, set sync point
                             update_syncpoint(knownfiles)
                         else:
                             specfn = opt_drive + f[fn][0].replace('\\','/')
                             print(f"{timestamp()} | File:{f[fn][0]} (as {specfn}) length:{f[fn][1]} bytes")
                             packet = (f[fn][1]).to_bytes(4, byteorder="big") + (len(specfn)).to_bytes(1, byteorder="big") + (specfn).encode()
-                            sendpacket(conn,packet)
+                            sendpacket(conn, packet, 0)
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
                             if f[fn][0] not in knownfiles:
                                 knownfiles.append(f[fn][0])
                             fileofs = 0
+                            packetno = 0
                             fn+=1
                     elif data == b"Get":
                         bytecount = 1024
@@ -177,18 +181,32 @@ def main():
                         totalbytes += bytecount
                         packet = filedata[fileofs:fileofs+bytecount]
                         print(f"{timestamp()} | Sending {bytecount} bytes, offset {fileofs}/{len(filedata)}")
-                        sendpacket(conn, packet)
+                        sendpacket(conn, packet, packetno)
                         fileofs += bytecount
+                        packetno += 1
                     elif data == b"Retry":
                         print(f"{timestamp()} | Resending")
-                        sendpacket(conn, packet)
+                        sendpacket(conn, packet, packetno - 1)
+                    elif data == b"Restart":
+                        print(f"{timestamp()} | Restarting")
+                        fileofs = 0
+                        packetno = 0
+                        sendpacket(conn, str.encode("Back"), 0)
+                    elif data == b"Bye":
+                        print(f"{timestamp()} | Closing connection")
+                        talking = False
+                    elif data == b"Sync2" or data == b"Sync1" or data == b"Sync":
+                        print(f'{timestamp()} | Old version requested')
+                        sendpacket(conn, str.encode("Nextsync 0.8 or later needed"), 0)
                     else:
                         print(f"{timestamp()} | Unknown command")
-                        sendpacket(conn,str.encode("Error"))
-        deltatime = time.time() - starttime
+                        sendpacket(conn, str.encode("Error"), 0)
+                endtime = time.time()
+                time.sleep(1); # allow the next to close first        
+        deltatime = endtime - starttime
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
         print(f"{timestamp()} | Disconnected")
-        print()
+        print()                
         if opt_sync_once:
             working = False
             
