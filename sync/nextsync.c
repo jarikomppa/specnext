@@ -8,7 +8,11 @@
 #include "yofstab.h"
 #include "fona.h"
 
-#define TIMEOUT 10000
+#define TIMEOUT 20000
+#define TIMEOUT_FLUSHUART 10000
+
+//#define SYNCSLOW
+//#define SYNCFAST
 
 //#define DEBUGMODE
 //#define DISKLOG
@@ -276,7 +280,7 @@ void flush_uart()
 // Do the maximum effort to empty the uart.
 void flush_uart_hard()
 {
-    unsigned short timeout = TIMEOUT;
+    unsigned short timeout = TIMEOUT_FLUSHUART;
 #ifdef DISKLOG
     fwrite(dbg, (char*)"[fuh]", 5);
 #endif    
@@ -292,39 +296,28 @@ void flush_uart_hard()
 #else        
             readuartrx();
 #endif        
-            timeout = TIMEOUT;
+            timeout = TIMEOUT_FLUSHUART;
         }
         timeout--;
     }
 }
 
-/*
-#if defined(DEBUGMODE) || defined(DISKLOG)
+
+#if defined(DEBUGMODE)
 unsigned short receive(unsigned char *b)
 {
     unsigned short count = 0;
-#ifdef DISKLOG
-    unsigned char *ob = b;
-#endif    
-#ifdef DISKLOG
-    fwrite(dbg, (char*)"[r]", 3);
-#endif    
     while (readuarttx() & 1)
     {
         *b = readuartrx();
         count++;
-#ifdef DEBUGMODE
-        putcharx(*b);
-#endif
+        putchar(*b);
         b++;
     }
-#ifdef DISKLOG
-    fwrite(dbg, ob, count);
-#endif    
     return count;
 } 
 #endif
-*/
+
 
 void send(const char *b, unsigned char bytes)
 {
@@ -510,10 +503,13 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
 
 char gofast(char *inbuf)
 {
-    //#define FAST_UART_MODE 12
-    //atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+#ifdef SYNCFAST    
     #define FAST_UART_MODE 14    
     atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
+#else    
+    #define FAST_UART_MODE 12
+    atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
+#endif    
 
     setupuart(FAST_UART_MODE);
     flush_uart_hard();
@@ -671,12 +667,14 @@ void main()
 
     if (atcmd("\r\n", "ERROR", 5, inbuf)) 
     {
+#ifndef SYNCSLOW
         // Maybe we're already going fast?
         fastuart = 1;
         setupuart(FAST_UART_MODE);
         flush_uart_hard();
         if (atcmd("\r\n", "ERROR", 5, inbuf)) 
         {
+#endif
             print("Can't talk to esp.\nResetting esp, try again.");
             // reset esp
             writenextreg(0x02, 128);
@@ -684,21 +682,26 @@ void main()
             for (len = 0; len < 10000; len++);
             writenextreg(0x02, 0);
             goto bailout;
+#ifndef SYNCSLOW
         }
-        
+#endif        
         // if we get this far, esp was already at the fast rate
         // (which can happen if you reset the next while
         // transfer is going on)
     }
 
+#ifndef SYNCSLOW
     if (!fastuart && gofast(inbuf))
         goto bailout;
-
-    // Try disconnecting just in case.
-    atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
+#endif
 
     print("Connecting to "); SETY(scr_y-1); SETX(14);
     print(fn);
+
+retryconnect:
+
+    // Try disconnecting just in case.
+    atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
 
     // Build the cipstart command in the huge buffer we have,
     // far enough that the atcommand shouldn't wreck it..
@@ -711,19 +714,19 @@ void main()
         print("Unable to connect");
         goto bailout;
     }
-
-    print("Connected");
     
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
     cipxfer("Sync3", 5, inbuf, &len, &dp);
 
-    if (memcmp(dp, "NextSync3", 9) != 0)
-    {
+    if (len < 9 || memcmp(dp, "NextSync3", 9) != 0)
+    {        
         retrycount++;
         if (retrycount < 5)
         {
+            if (len == 0)
+                goto retryconnect;
             flush_uart_hard();
             goto retryhandshake;
         }
@@ -733,6 +736,8 @@ retryhandshake:
         printnum(len); SETY(scr_y+1);
         goto closeconn;
     }
+
+    print("Connected");
     
     do
     {        
@@ -766,16 +771,17 @@ retrynext:
 closeconn:
     SETY(scr_y + 2);
     checkscroll();
+    print("Shutting down..");
     cipxfer("Bye", 3, inbuf, &len, &dp);
-    atcmd("AT+CIPCLOSE\r\n", "OK", 2, inbuf);
+    atcmd("AT+CIPCLOSE\r\n", "", 0, inbuf);
     if (scr_y > 16)
     {
         scrollup();
         scr_y -= 8;
     }
-    print("All done");
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
+    print("All done");
     writenextreg(0x07, nextreg7); // restore cpu speed
 #ifdef DISKLOG
     fclose(dbg);
