@@ -16,6 +16,8 @@ import glob
 import sys
 import os
 
+assert sys.version_info >= (3, 6) # We need 3.6 for f"" strings.
+
 PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
 VERSION = "NextSync3"
 IGNOREFILE = "syncignore.txt"
