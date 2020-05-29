@@ -1,1 +1,2 @@
-@copy /y zakplay.dot d:\dot\zakplay
+@copy /y zakplay.dot sync\dot\playzak
+

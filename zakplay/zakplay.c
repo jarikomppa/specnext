@@ -41,6 +41,7 @@ extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short byte
 
 extern void writenextreg(unsigned char reg, unsigned char val);
 extern unsigned char readnextreg(unsigned char reg);
+extern unsigned short findmaxscan();
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
 
@@ -59,13 +60,16 @@ extern unsigned char* dzx7_mega(unsigned char *src)  __z88dk_fastcall;
 void printnum(unsigned char v, unsigned char x, unsigned char y)
 {
     char temp[4];
+    char p = 0;
+    char ov = v;
     temp[0] = '0';
     temp[1] = '0';
     temp[2] = '0';
-    temp[3] = 0;
-    while (v >= 100) { temp[0]++; v -= 100; }
-    while (v >= 10) { temp[1]++; v -= 10; }
-    while (v >= 1) { temp[2]++; v -= 1; }
+    if (ov >= 100) { while (v >= 100) { temp[p]++; v -= 100; } p++; }
+    if (ov >= 10) { while (v >= 10) { temp[p]++; v -= 10; } p++; }
+    while (v >= 1) { temp[p]++; v -= 1; } p++;  
+    temp[p] = 0;
+    
     drawstringz(temp, x, y);    
 }
 
@@ -89,6 +93,10 @@ __at (0xe203) unsigned char framedelay;
 __at (0xe204) unsigned char state;
 __at (0xe205) unsigned short srcofs;
 __at (0xe207) unsigned short kblock;
+__at (0xe209) unsigned short maxscan;
+__at (0xe20b) unsigned short scanlineskip;
+__at (0xe20d) unsigned char frameskip;
+__at (0xe20e) unsigned short nextscanline;
 __at (0xe250) unsigned char debugvalue;
 
 __at (0xe300) unsigned char ayregs[48];
@@ -202,11 +210,21 @@ void zeroay()
 void isr()
 {
     unsigned char reg, val;
+    
+    //gPort254 = 1;
+    
+    // I have a funny feeling I'll be writing this in assembler:
+    nextscanline += scanlineskip;
+    while (nextscanline > maxscan) nextscanline -= maxscan;
+    writenextreg(0x22, 2 + 4 + (nextscanline >> 8));
+    writenextreg(0x23, nextscanline & 0xff);
+    
     if (state == 2)
     {
         ofs -= 1024;
         state = 3;
     }
+    //gPort254 = 0;
 
     if (framedelay)
     {
@@ -214,6 +232,7 @@ void isr()
         return;
     }
 
+    //gPort254 = 2;
     do
     {
         val = buffer_a[ofs]; ofs++;
@@ -242,7 +261,15 @@ void isr()
         }
 
     } while ((reg & 0x80) == 0);    
-    framedelay = val - 1;   
+    framedelay = val - 1;
+    for (reg = 0; reg < frameskip; reg++)
+        framedelay += val;
+    //gPort254 = 0;
+}
+
+char test(char a, char b)
+{
+    return a > b;
 }
 
 char readstring(char f, char ofs)
@@ -287,8 +314,8 @@ char checkhdr(char f)
         return 2;
     }
     
-    // Is this a 50hz file?    
-    if (!(zakheader[20] == 50 &&
+    // Is this a sub-255hz file?    
+    if (!(//zakheader[20] == 50 &&
           zakheader[21] == 0 &&
           zakheader[22] == 0 && 
           zakheader[23] == 0))
@@ -307,6 +334,9 @@ char checkhdr(char f)
     {
         drawstringz("AY-3-8910", 0, 20);
     }
+    drawstringz("Hz", 2, 19);
+    printnum(zakheader[20], 0, 19);
+
     if (zak_chiptype == 1) drawstringz("Normal", 0, 21);
     if (zak_chiptype == 2) drawstringz("Turbosound", 0, 21);
     if (zak_chiptype == 3) drawstringz("Turbosound Next", 0, 21);      
@@ -420,14 +450,32 @@ void drawlogo()
     }
 }
 
+// refresh rate, in hz, multiplied by 16.
+const unsigned short modefreq[16] = {
+789,805,830,845,874,902,930,800,
+930,949,978,995,1029,1062,1096,960
+};
+
+
 void main()
 {     
     char f;
     char r;
+    char r7;
+    char vidmode;
+    unsigned long templong;
+    unsigned long templong2;
+    unsigned short i;
+    r7 = readnextreg(0x07); // turbo
+    writenextreg(0x07, 3); // set speed to 28MHz
+    
     memset((unsigned char*)yofs[0],0,192*32);
     memset((unsigned char*)yofs[0]+192*32,7,24*32);
     gPort254 = 0;
     drawlogo();
+    vidmode = (readnextreg(0x11) & 7) | ((readnextreg(0x5) & 4)?8:0);
+    
+
     r = allocpage();
     f = readnextreg(0x57);
     writenextreg(0x57, r);    
@@ -435,10 +483,11 @@ void main()
     nextregbackup[0x56] = readnextreg(0x56); // mmu 6
     nextregbackup[0x57] = f;                 // mmu 7
     nextregbackup[0x06] = readnextreg(0x06); // peripheral2 for fm vs ay flag
-    nextregbackup[0x07] = readnextreg(0x07); // turbo
+    nextregbackup[0x07] = r7;                // turbo
+    nextregbackup[0x22] = readnextreg(0x22); // video line interrupt control reg
+    nextregbackup[0x23] = readnextreg(0x23); // video line interrupt data reg
     pages[0] = 1; // number of allocated pages
     pages[1] = r; // allocated top page
-    writenextreg(0x07, 3); // set speed to 28MHz
     openfile(&f);
     r = checkhdr(f);
     if (r)
@@ -448,18 +497,42 @@ void main()
         {
         case 1: drawstringz("Not a zak file", 0, 0); break;
         case 2: drawstringz("Not an AY/FM zak file", 0, 0); break;
-        case 3: drawstringz("Not a 50hz zak file", 0, 0); break;
+        case 3: drawstringz("Unsupported play frequency", 0, 0); break;
         case 4: drawstringz("File not found", 0, 0); break;
         }
     }
     else
-    {
+    {        
         readsongdata(f);
         fclose(f); // avoid disk issues if we crash after this
-        memset(ayregs, 0, 3*16);
-        drawstringz("ZAK player 0.1 by Jari Komppa", 0, 0);
-        drawstringz("http://iki.fi/sol", 0, 1);        
+        templong = 0;
+        maxscan = findmaxscan();
 
+        for (i = 0; i < maxscan; i++)
+            templong += modefreq[vidmode];
+        // templong is now scanlines per second * 16
+        i = zakheader[20]; // song replay freq
+        // we can't wait over a frame, so.. make things more frequent
+        frameskip = 0;        
+        while (i < 70) // display freqs go to almost 70hz(!)
+        {
+            i += zakheader[20];
+            frameskip++; // how many frames to just schedule next int and return
+        }
+        templong2 = 0;
+        scanlineskip = 0;
+        // divide scanlines per second by our update rate
+        while (templong2 < templong)
+        {
+            templong2 += i;
+            scanlineskip++;
+        }       
+        scanlineskip >>= 4; // div by 16, and we have our scanlineskip value
+                
+        memset(ayregs, 0, 3*16);
+        drawstringz("ZAK player 0.2 by Jari Komppa", 0, 0);
+        drawstringz("http://iki.fi/sol", 0, 1);        
+               
         debugvalue = 0;
         activepage = 0;
         ofs = 0;
@@ -474,6 +547,9 @@ void main()
 
         setupisr7();
         readkeyboard();
+        writenextreg(0x22, 2+4); // enable line interrupt, disable ula interript
+        writenextreg(0x23, 0); // set interrupt to row 0
+        nextscanline = 0;
         ei();
         while (!KEYDOWN(SPACE) && state != 4)
         {
@@ -494,6 +570,9 @@ void main()
         closeisr7();
     }
     zeroay(); // silence, please
+    writenextreg(0x22, nextregbackup[0x22]);
+    writenextreg(0x23, nextregbackup[0x23]);
+
     writenextreg(0x06, nextregbackup[0x06]);
     writenextreg(0x07, nextregbackup[0x07]);
     for (r = 0; r < pages[0]; r++)

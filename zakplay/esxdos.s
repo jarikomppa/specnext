@@ -131,6 +131,34 @@ _readnextreg::
 	pop ix
     ret
 
+;extern unsigned short findmaxscan();
+_findmaxscan::
+    di
+	ld	    l,      #0x1e     ; msb
+    ld      bc,     #0x243B   ; nextreg select
+    out     (c),    l
+    inc     b                 ; nextreg i/o
+msbnz:    
+    in      a,      (c)
+    jp nz, msbnz
+msbz:    
+    in      a,      (c)
+    jp z, msbz
+    dec     b
+    inc     l
+    ld      h,      a
+    ld      d, #0
+    out     (c),    l
+    inc     b                 ; nextreg i/o
+lsbgrow:    
+    in      a,      (c)
+    ld      e, a
+    sub     d
+    ld      l, d
+    ld      d, e
+    jp nc, lsbgrow
+    ret
+
 ; Note: most likely requires most of the normal banks to be mapped to work
 
 ;extern unsigned char allocpage()
