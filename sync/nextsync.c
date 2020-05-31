@@ -246,19 +246,21 @@ unsigned char receive_slow()
 
 void send(const char *b, unsigned char bytes)
 {
+    unsigned short timeout = TIMEOUT;
     unsigned char t;
 #ifdef DISKLOG
     fwrite(dbg, (char*)"[s]", 3);
     fwrite(dbg, (char*)b, bytes);
 #endif    
-    while (bytes)
+    while (timeout && bytes)
     {
         // busy wait until byte is transmitted
         do
         {
+            timeout--;
             t = readuarttx();
         }
-        while (t & 2);
+        while (timeout && t & 2);
         
         writeuarttx(*b);
 
@@ -295,9 +297,9 @@ unsigned short bufinput(char *buf)
         datalen = mulby10(datalen);
         datalen += r - '0';
         r = receive_slow();
-        if (r == 0) return 0;
+        if (r != ':' && (r < '0' || r > '9')) return 0;
     }
-    
+    if (datalen > 2048 || datalen == 0) return 0;
     do
     {
         ofs += receive(buf + ofs);
@@ -311,12 +313,13 @@ unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
 {
     unsigned short len = 0;
     unsigned short timeout = TIMEOUT;
+    unsigned short retrycount = 100;
     unsigned char l = 0;
         
-    while (cmd[l]) l++;
+    while (cmd[l]) l++;        
 retryatcmd:
     flush_uart();
-    send(cmd, l);
+    send(cmd, l);      
 
     while (timeout && len < 2048)
     {        
@@ -332,11 +335,14 @@ retryatcmd:
         }
         if (strinstr(buf, "busy", len, 4))
         {
+            if (!retrycount)
+                return 1;
 #ifdef DISKLOG
         fwrite(dbg, "[atb]", 5);
         fwrite(dbg, buf, len);
 #endif
             len = 0;
+            retrycount--;
             goto retryatcmd;
         }
     }    
@@ -365,11 +371,14 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
     const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
     char *cipsendcmd = (char *)cipsendcmd_c;
     unsigned short received, expected;
-    unsigned short timeout = TIMEOUT;
+    unsigned short timeout = 16; // relatively small timeout needed because bufinput has timeout
     cipsendcmd[13] = '0' + cmdlen;
-    atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
-    flush_uart();
     *len = 0;
+    if (atcmd(cipsendcmd, ">", 1, output)) // cipsend prompt
+    {
+        return;
+    }
+    flush_uart();
     expected = 2; // always expect at least 2 bytes. Actually, we should expect at least 5.. size+checksums
     received = 0;
     send(cmd, cmdlen);
@@ -380,6 +389,10 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
         if (expected == 2 && received > 2)
         {
             expected = ((output[0]<<8) | output[1]);
+            if (expected < 5 || expected > 2048)
+            {
+                return;
+            }
         }
         timeout--;
     }
@@ -582,13 +595,16 @@ void main()
         goto bailout;
 #endif
 
+    atcmd("ATE0\r\n", "OK", 2, inbuf); // command echo off; if on, we might match server name as OK/ERROR/BUSY =)
+
     print("Connecting to "); SETY(scr_y-1); SETX(14);
     print(fn);
 
 retryconnect:
 
-    // Try disconnecting just in case.
-    atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf);
+    // Try disconnecting a few times just in case.
+    retrycount = 10;
+    while (retrycount && atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf)) { retrycount--; }
 
     // Build the cipstart command in the huge buffer we have,
     // far enough that the atcommand shouldn't wreck it..
@@ -601,6 +617,8 @@ retryconnect:
         print("Unable to connect");
         goto bailout;
     }
+        
+    print("Handshake..");
     
     retrycount = 0;
 retryhandshake:
@@ -613,8 +631,12 @@ retryhandshake:
         if (retrycount < 5)
         {
             if (len == 0)
+            {
+                print("Retry connect..");
                 goto retryconnect;
+            }
             flush_uart_hard();
+            print("Retry handshake..");
             goto retryhandshake;
         }
         print("Server version mismatch");
@@ -624,7 +646,7 @@ retryhandshake:
         goto closeconn;
     }
 
-    print("Connected");
+    print("Connected\n");
     
     do
     {        
@@ -639,8 +661,8 @@ retrynext:
             fn[fnlen] = 0;
             if (*fn)
             {
-                print("File:\nSize:\nXfer:"); SETX(5); SETY(scr_y - 3);
-                print(fn); SETX(5);
+                print(fn);
+                print("Size:\nXfer:"); SETX(5); SETY(scr_y - 2);
                 printnum(filelen);
                 transfer(fn, inbuf);
                 checkscroll();
