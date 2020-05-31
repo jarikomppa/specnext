@@ -138,6 +138,7 @@ def main():
         retries = 0
         packets = 0
         restarts = 0
+        gee = 0
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", PORT))
             s.listen()
@@ -196,7 +197,7 @@ def main():
                             fileofs = 0
                             packetno = 0
                             fn+=1
-                    elif data == b"Get":                        
+                    elif data == b"Get" or data == b"Gee": # Really common mistransmit. Probably uart-esp..
                         bytecount = MAX_PAYLOAD
                         if bytecount + fileofs > len(filedata):
                             bytecount = len(filedata) - fileofs                        
@@ -205,8 +206,10 @@ def main():
                         packets += 1
                         sendpacket(conn, packet, packetno)
                         totalbytes += len(packet)
-                        fileofs += bytecount
+                        fileofs += bytecount                        
                         packetno += 1
+                        if data == b"Gee":
+                            gee += 1
                     elif data == b"Retry":
                         retries += 1
                         print(f"{timestamp()} | Resending")
@@ -233,10 +236,10 @@ def main():
                         print(f"{timestamp()} | Unknown command")
                         sendpacket(conn, str.encode("Error"), 0)
                 endtime = time.time()
-                time.sleep(1); # allow the next to close first        
+                #time.sleep(1); # allow the next to close first        
         deltatime = endtime - starttime
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
-        print(f"{timestamp()} | packets: {packets}, retries: {retries}, restarts: {restarts}")
+        print(f"{timestamp()} | packets: {packets}, retries: {retries}, restarts: {restarts}, gee: {gee}")
         print(f"{timestamp()} | Disconnected")
         print()                
         if opt_sync_once:
