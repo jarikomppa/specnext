@@ -211,7 +211,7 @@ def main():
                         retries += 1
                         print(f"{timestamp()} | Resending")
                         sendpacket(conn, packet, packetno - 1)
-                        totalbytes -= len(packet)
+                        totalbytes -= len(packet) # Note: Multiple consecutive retries may lead to negative bytes sent
                     elif data == b"Restart":
                         restarts += 1
                         print(f"{timestamp()} | Restarting")

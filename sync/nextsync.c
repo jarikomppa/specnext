@@ -283,7 +283,7 @@ unsigned short bufinput(char *buf)
     unsigned short ofs = 0;
     unsigned char r;
     while (timeout && receive_slow() != '+') { timeout--; }
-    // TODO: size opt
+    // TODO: size/speed opt
     if (receive_slow() != 'I') return 0; // should be I
     if (receive_slow() != 'P') return 0; // should be P
     if (receive_slow() != 'D') return 0; // should be D

@@ -1,4 +1,4 @@
-NextSync 0.8
+NextSync 0.9
 by Jari Komppa 2020
 http://iki.fi/sol
 
@@ -151,6 +151,8 @@ Troubleshooting
     - Is the server running?
     - Is the server ip/name correct?
     - Is the server on the same network?
+    - Is the server at "NextSync listening to port 2048"?
+      If your transfer hung for some reason, restart server.
     - Is the Next's wifi configured to be on the same network?
     - The server name is stored in c:/sys/config/nextsync.cfg
 
@@ -192,6 +194,9 @@ A lot of retries/restarts:
       down to 256 bytes (from 1024 bytes). This is slower, but will
       always fit in the next's buffers.
 
+It's so slow:
+    - This is 8-bit technology we're talking about. You may wan to try
+      syncfast and/or running server with -u, but don't expect miracles.
 
 
 Server options
@@ -273,6 +278,11 @@ Single large file
 214.70 kilobytes transferred in 24.21 seconds,  8.87 kBps - syncslow
 214.70 kilobytes transferred in 31.03 seconds,  6.92 kBps - syncslow, -s
 
+48k/sec ought to be enough for a speccy ;)
+
+When transferring multiple files, things get a bit slower due to all
+of the handshaking;
+
 48 files of various sizes
 462.72 kilobytes transferred in 17.33 seconds, 26.71 kBps - syncfast, -u
 462.72 kilobytes transferred in 17.85 seconds, 25.93 kBps - syncfast
@@ -333,6 +343,10 @@ server: "Back"
 next: "Sync", "Sync1", "Sync2"
 server: "Nextsync 0.8 or later needed"
 - For older protocol versions, the error string is sent
+
+next: "Bye"
+server: "Later"
+- Disconnect.
 
 Otherwise:
 next:???
