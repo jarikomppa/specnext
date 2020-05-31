@@ -237,6 +237,12 @@ unsigned short receive(unsigned char *b)
 } 
 #endif
 
+unsigned char receive_slow()
+{
+    unsigned short timeout = TIMEOUT;
+    while (timeout && !(readuarttx() & 1)) { timeout--; } // wait for data.
+    return readuartrx(); // returns 0 on no data
+}
 
 void send(const char *b, unsigned char bytes)
 {
@@ -265,66 +271,40 @@ void send(const char *b, unsigned char bytes)
 
 extern unsigned char strinstr(char *a, char *b, unsigned short len, char blen);
 
-char bufinput(char *buf, unsigned short *len)
+// Anatomy of a cipxfer:
+// [s]"AT+CIPSENDEX=5\r\n"
+// [at]"AT+CIPSENDEX=5\r\r\n\r\nOK\r\n> "
+// [s]"Sync3"
+// [bi]"\r\nRecv 5 bytes\r\n\r\nSEND OK\r\n\r\n+IPD,14:\0\x0eNextSync33\x0a\0"
+unsigned short bufinput(char *buf)
 {
     unsigned short timeout = TIMEOUT;
+    unsigned short datalen = 0;
     unsigned short ofs = 0;
-    unsigned short i = 0;
-    unsigned short hdr = 0;
-    unsigned short destsize = 0xfff;
-    while (timeout)
+    unsigned char r;
+    while (timeout && receive_slow() != '+') { timeout--; }
+    // TODO: size opt
+    if (receive_slow() != 'I') return 0; // should be I
+    if (receive_slow() != 'P') return 0; // should be P
+    if (receive_slow() != 'D') return 0; // should be D
+    if (receive_slow() != ',') return 0; // should be ,
+    datalen = receive_slow() - '0'; // first digit
+    r = receive_slow();
+    while (r != ':')
+    {
+        datalen = mulby10(datalen);
+        datalen += r - '0';
+        r = receive_slow();
+        if (r == 0) return 0;
+    }
+    
+    do
     {
         ofs += receive(buf + ofs);
-        for (; i < ofs; i++)
-        {
-            if (buf[i] == ':') // should get "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
-            {
-                i++;
-                // Trying to keep this loop relatively tight, because
-                // the uart fifo overrun is a real problem.
-                while (timeout && ofs < 2048)
-                {
-                    ofs += receive(buf + ofs);
-                    if (ofs >= i + 2)
-                    {
-                        hdr = ((buf[i]<<8) | buf[i+1]);
-                        destsize = hdr + i;
-                        while (timeout && ofs < 2048)
-                        {
-                            ofs += receive(buf + ofs);
-                            if (ofs >= destsize)
-                            {
-                                *len = hdr;
-#ifdef DISKLOG
-                                fwrite(dbg, "[bi]", 4);
-                                fwrite(dbg, buf, ofs);
-#endif                
-                                return 0;
-                            }
-                            timeout--;
-                        }
-#ifdef DISKLOG
-                        fwrite(dbg, "[bi2]", 5);
-                        fwrite(dbg, buf, ofs);
-#endif                
-                        return 1;                    
-                    }
-                    timeout--;
-                }
-#ifdef DISKLOG
-                fwrite(dbg, "[bi1]", 5);
-                fwrite(dbg, buf, ofs);
-#endif                
-                return 1;
-            }
-        }                
         timeout--;
-    }    
-#ifdef DISKLOG
-    fwrite(dbg, "[bi0]", 5);
-    fwrite(dbg, buf, ofs);
-#endif                
-    return 1;
+    }
+    while (timeout && ofs < datalen);
+    return ofs;    
 }
 
 unsigned char atcmd(char *cmd, char *expect, char expectlen, char *buf)
@@ -380,34 +360,32 @@ void noconfig()
 }
 
 // max cmdlen = 9
-// Anatomy of a cipxfer:
-// [s]"AT+CIPSENDEX=5\r\n"
-// [at]"AT+CIPSENDEX=5\r\r\n\r\nOK\r\n> "
-// [s]"Sync3"
-// [bi]"\r\nRecv 5 bytes\r\n\r\nSEND OK\r\n\r\n+IPD,14:\0\x0eNextSync33\x0a\0"
-
 void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
     const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
     char *cipsendcmd = (char *)cipsendcmd_c;
+    unsigned short received, expected;
+    unsigned short timeout = TIMEOUT;
     cipsendcmd[13] = '0' + cmdlen;
     atcmd(cipsendcmd, ">", 1, output); // cipsend prompt
-    *len = 0;
-    send(cmd, cmdlen);   
-    if (bufinput(output, len)) return;
     flush_uart();
-    // Buffer should have "recv nnn bytes\r\nSEND OK\r\n\r\n+IPD,nnn:"
-    // followed by the input. The input should start with two bytes
-    // for packet size, payload, and then two bytes of checksums.
-    
-    // Skip to the ':' from the above expected string.
-    while (*output != ':') 
+    *len = 0;
+    expected = 2; // always expect at least 2 bytes. Actually, we should expect at least 5.. size+checksums
+    received = 0;
+    send(cmd, cmdlen);
+    do 
     {
-        output++;
+        unsigned short r = bufinput(output + received);
+        received += r;
+        if (expected == 2 && received > 2)
+        {
+            expected = ((output[0]<<8) | output[1]);
+        }
+        timeout--;
     }
-    //output++;
-    *dataptr = output + 2 + 1; // skip size bytes
-    *len -= 2; // reduce size bytes    
+    while (timeout && received < expected);
+    *dataptr = output + 2; // skip size bytes
+    *len = received - 2; // reduce size bytes    
 }
 
 char gofast(char *inbuf)
