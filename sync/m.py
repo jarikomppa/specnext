@@ -36,6 +36,7 @@ src = [
     "std.s",
 	"esxdos.s",
 	"uart.s",
+	"gfx.c",
 	"nextsync.c"
 	]
 

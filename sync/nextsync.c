@@ -5,8 +5,9 @@
  * (practically public domain) 
  */
 
-#include "yofstab.h"
-#include "fona.h"
+extern const unsigned short yofs[];
+
+extern const unsigned char fona_png[];
 
 #define TIMEOUT 20000
 #define TIMEOUT_FLUSHUART 10000
@@ -52,6 +53,7 @@ extern unsigned short receive(char *b);
 extern char checksum(char *dp, unsigned short len);
 
 extern void memcpy(char *dest, const char *source, unsigned short count);
+extern unsigned short mulby10(unsigned short input) __z88dk_fastcall;
 
 extern unsigned short framecounter;
 extern char *cmdline;
@@ -109,53 +111,11 @@ void drawcharx(unsigned char c)
 }
 #endif
 
-void drawchar(unsigned char c)
-{
-    unsigned char i;
-    unsigned char *p = (unsigned char*)yofs[scr_y] + scr_x;
-    unsigned short ofs = c * 8;
-    for (i = 0; i < 8; i++)
-    {
-        *p = fona_png[ofs];
-        ofs++;
-        p += 256;
-    }
-}
+extern void drawchar(unsigned char c);
 
-void scrollup()
-{
-    unsigned char i, j;
+extern void scrollup();
 
-    for (i = 0; i < 16; i++)
-    {
-        unsigned char* src = (unsigned char*)yofs[i+8];
-        unsigned char* dst = (unsigned char*)yofs[i];
-        for (j = 0; j < 8; j++)
-        {
-            memcpy(dst, src, 32);
-            src += 256;
-            dst += 256;
-        }
-    }
-    for (i = 16; i < 24; i++)
-    {
-        unsigned char* dst = (unsigned char*)yofs[i];
-        for (j = 0; j < 8; j++)
-        {
-            memset(dst, 0, 32);
-            dst += 256;
-        }
-    }
-}
-
-void checkscroll()
-{
-    if (scr_y >= 24)
-    {
-        scrollup();
-        scr_y -= 8;
-    }
-}
+extern void checkscroll();
 
 void print(char * t)
 {
@@ -214,50 +174,9 @@ void putcharx(char t)
 }
 #endif
 
-unsigned char uitoa(unsigned long v, char *b)
-{
-    unsigned long d = v;
-    unsigned char dig = 0;
-    unsigned long tt[] = 
-    {
-        1000000000,
-        100000000,
-        10000000,
-        1000000,
-        100000,
-        10000,
-        1000,
-        100,
-        10,
-        1,
-        0
-    };
-    unsigned char p = 0;    
-    b[p] = '0';
-    if (v != 0)
-    {
-        do 
-        {
-            unsigned long t = tt[dig];
-            if (d >= t) { while (v >= t) { b[p]++; v -= t; } p++; b[p] = '0'; }        
-            dig++;
-        }  
-        while (tt[dig] > 0);    
-    }
-    else
-    {
-        p++;
-    }
-    b[p] = 0;
-    return p;
-}
+extern unsigned char uitoa(unsigned long v, char *b);
 
-void printnum(unsigned long v)
-{
-    char temp[16];
-    uitoa(v, temp);
-    print(temp);
-}
+void printnum(unsigned long v);
 
 void flush_uart()
 {
@@ -344,23 +263,7 @@ void send(const char *b, unsigned char bytes)
     gPort254 = 0;
 }
 
-unsigned char strinstr(char *a, char *b, unsigned short len, char blen)
-{
-    if (!*b || !blen) return 1;
-    while (len)
-    {
-        if (*a == *b)
-        {            
-            unsigned char i = 0;
-            while (i < blen && a[i] == b[i]) i++;
-            if (i >= blen)
-                return 1;
-        }
-        a++;
-        len--;
-    }
-    return 0;
-}
+extern unsigned char strinstr(char *a, char *b, unsigned short len, char blen);
 
 char bufinput(char *buf, unsigned short *len)
 {
@@ -477,6 +380,12 @@ void noconfig()
 }
 
 // max cmdlen = 9
+// Anatomy of a cipxfer:
+// [s]"AT+CIPSENDEX=5\r\n"
+// [at]"AT+CIPSENDEX=5\r\r\n\r\nOK\r\n> "
+// [s]"Sync3"
+// [bi]"\r\nRecv 5 bytes\r\n\r\nSEND OK\r\n\r\n+IPD,14:\0\x0eNextSync33\x0a\0"
+
 void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
     const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
@@ -624,7 +533,7 @@ void main()
           
     SETX(0);
     
-    print("NextSync 0.8 by Jari Komppa");
+    print("NextSync 0.9 by Jari Komppa");
     print("http://iki.fi/sol");
     SETY(scr_y+1);
  

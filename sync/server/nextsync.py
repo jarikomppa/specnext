@@ -220,6 +220,7 @@ def main():
                         packetno = 0
                         sendpacket(conn, str.encode("Back"), 0)
                     elif data == b"Bye":
+                        sendpacket(conn, str.encode("Later"), 0)
                         print(f"{timestamp()} | Closing connection")
                         talking = False
                     elif data == b"Sync2" or data == b"Sync1" or data == b"Sync":
