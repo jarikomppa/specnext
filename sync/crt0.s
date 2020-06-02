@@ -4,12 +4,14 @@
 		.globl _scr_x
 		.globl _scr_y
 		.globl _dbg
+		.globl _osiy
 
 		.area _HEADER(ABS)
 _crt0_entry:	
 		di
 
         ld (_cmdline),hl 
+        ld (_osiy), iy
 
 		;; store all regs
 		push af
@@ -88,6 +90,7 @@ allocfail:
 store_sp:	.word 252
 _cmdline:   .word 0
 _pagehandle: .word 0
+_osiy: .word 0
 _mmu4: .db 0
 _scr_x: .db 0
 _scr_y: .db 0

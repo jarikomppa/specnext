@@ -36,6 +36,7 @@ extern void fclose(unsigned char handle);
 extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void makepath(char *pathspec); // must be 0xff terminated!
+extern void conprint(char *txt) __z88dk_fastcall;
 
 extern void writenextreg(unsigned char reg, unsigned char val);
 extern unsigned char readnextreg(unsigned char reg);
@@ -63,13 +64,21 @@ extern char dbg;
 
 unsigned char parse_cmdline(char *f)
 {
-    unsigned char i;
+    unsigned char i;   
+    
+    if (!cmdline)
+    {
+        f[0] = 0;
+        return 0;
+    }
+
     i = 0;
-    while (cmdline && i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
+    while (i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
     {
         f[i] = cmdline[i];
-        i++;
+        i++;        
     }
+
     f[i] = 0;
     return i;
 }
@@ -353,18 +362,6 @@ retryatcmd:
     return 1;
 }
 
-void noconfig()
-{
-        // 12345678901234567890123456789012
-    print("Server configuration not found.\n\n"
-          "Give server name or ip address\n"
-          "as a parameter to create the\n"
-          "server configuration.\n\n"
-          "(Running nextsync.py shows\n"
-          "both server name and the ip\n"
-          "address)");
-}
-
 // max cmdlen = 9
 void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned short *len, unsigned char **dataptr)
 {    
@@ -463,8 +460,13 @@ restart:
         do
         {
             cipxfer("Get", 3, inbuf, &len, &dp);
+retry:
             if (dp[len-1] != packetno)
             {
+                if (len == 5+3 && checksum(dp, len-3)==0 && memcmp(dp, "Error", 5) == 0)
+                {
+                    goto doretry;
+                }
                 flush_uart_hard();
                 cipxfer("Restart", 7, inbuf, &len, &dp);
                 fclose(filehandle);
@@ -473,7 +475,6 @@ restart:
                 received = 0;
                 goto restart;
             }
-retry:
             if (len && checksum(dp, len-3)==0)
             {
                 received += len - 3;
@@ -489,6 +490,7 @@ retry:
             }
             else
             {                
+doretry:
                 flush_uart_hard();
                 cipxfer("Retry", 5, inbuf, &len, &dp);
                 goto retry;
@@ -504,17 +506,78 @@ void main()
     const char *cipstart_prefix  = "AT+CIPSTART=\"TCP\",\"";
     const char *cipstart_postfix = "\",2048\r\n";
     const char *conffile         = "c:/sys/config/nextsync.cfg";
-    char inbuf[4096];    
     char fn[256];
+    char inbuf[4096];    
     unsigned char fnlen;
     unsigned long filelen;
     unsigned char *dp;
-    unsigned short len;     
+    unsigned short len = 0;     
     unsigned char nextreg7;
     char fastuart = 0;
     char filehandle;
     char retrycount;
-    
+
+    len = parse_cmdline(fn);
+        
+    if (len && fn[0] == '-')
+    {
+        // Probably asking for help.
+        conprint(
+           //12345678901234567890123456789012
+            "SYNC v1.0 by Jari Komppa\r"
+            "Transfer files from PC to next\r"
+            "\r"
+            "SYNOPSIS:\r"
+            ".SYNC [servername/ip addr]\r"
+            "\r"
+            "Either run without parameters\r"
+            "to sync files, or give server\r"
+            "address or name to save config.\r"
+            "\r"
+            "Please read nextsync.txt for\r"
+            "more instructions.\r");
+        goto terminate;
+    }
+        
+    if (*fn)
+    {
+        conprint("Setting server to:");
+        conprint(fn);
+        conprint("\r-> ");
+        conprint((char*)conffile);
+        conprint("\r");
+        filehandle = createfilewithpath((char*)conffile);
+        if (filehandle == 0)
+        {
+            conprint("Failed to open file\r");
+            goto terminate;
+        }
+        
+        fwrite(filehandle, fn, len);
+        fclose(filehandle);        
+        conprint("Ok\r");
+        goto terminate;
+    }
+
+    filehandle = fopen((char*)conffile, 1); // read + open existing
+    if (filehandle == 0)        
+    {
+            // 12345678901234567890123456789012
+        conprint(
+              "Server configuration not found.\r\r"
+              "Give server name or ip address\r"
+              "as a parameter to create the\r"
+              "server configuration.\r\r"
+              "(Running nextsync.py shows\r"
+              "both server name and the ip\r"
+              "address)");
+        goto terminate;
+    }
+
+    len = fread(filehandle, fn, 255);
+    fclose(filehandle);
+    fn[len] = 0;
+
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
 
@@ -524,38 +587,10 @@ void main()
           
     SETX(0);
     
-    print("NextSync 0.9 by Jari Komppa");
+    print("NextSync 1.0 by Jari Komppa");
     print("http://iki.fi/sol");
     SETY(scr_y+1);
- 
-    len = parse_cmdline(fn);
-    if (*fn)
-    {
-        print("Setting server to:");
-        print(fn);
-        print("-> "); SETY(scr_y-1); SETX(3);
-        print((char*)conffile);
-        filehandle = createfilewithpath((char*)conffile);
-        if (filehandle == 0)
-        {
-            print("Failed to open file");
-            goto bailout;
-        }
-        
-        fwrite(filehandle, fn, len);
-        fclose(filehandle);        
-        goto bailout;
-    }
 
-    filehandle = fopen((char*)conffile, 1); // read + open existing
-    if (filehandle == 0)        
-    {
-        noconfig();
-        goto bailout;
-    }
-    len = fread(filehandle, fn, 255);
-    fclose(filehandle);
-    fn[len] = 0;
  
 #ifdef DISKLOG
     dbg = createfilewithpath((char*)"syncdebug.dat");
@@ -694,5 +729,7 @@ bailout:
     writenextreg(0x07, nextreg7); // restore cpu speed
 #ifdef DISKLOG
     fclose(dbg);
-#endif    
+#endif
+terminate:
+    return;
 }

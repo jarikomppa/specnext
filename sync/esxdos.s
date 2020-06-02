@@ -8,6 +8,7 @@
 	.globl _allocpage
 	.globl _freepage
 	.globl _makepath
+	.globl _conprint
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -28,6 +29,7 @@ _fopen::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	l,  4 (ix) ; fn
 	ld	h,  5 (ix)
 	ld  b,  6 (ix) ; mode
@@ -43,6 +45,7 @@ openfail:
 
 ;extern void fclose(unsigned char handle);
 _fclose::
+    ld iy, (_osiy)
 	ld	hl, #2+0
 	add	hl, sp
 	ld	a, (hl) ; handle
@@ -55,6 +58,7 @@ _fread::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	a,  4 (ix) ; handle
 	ld	l,  7 (ix) ; bytes
 	ld	h,  8 (ix)
@@ -74,6 +78,7 @@ _fwrite::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	a,  4 (ix) ; handle
 	ld	l,  7 (ix) ; bytes
 	ld	h,  8 (ix)
@@ -136,6 +141,7 @@ _readnextreg::
 
 ;extern unsigned char allocpage()
 _allocpage::
+    ld iy, (_osiy)
     ld      hl, #0x0001 ; alloc zx memory
     exx                             ; place parameters in alternates
     ld      de, #0x01bd             ; IDE_BANK
@@ -150,6 +156,7 @@ allocfail:
 
 ;extern void freepage(unsigned char page)
 _freepage::
+    ld iy, (_osiy)
 	ld	    hl, #2+0
 	add	    hl, sp
 	ld	    e, (hl)  ; page
@@ -167,14 +174,8 @@ _makepath::
     pop hl  ; char *pathspec
     push hl ; restore stack
     push de
-
-;	push af
-;	push bc
-;	push de
-;	push hl
-;	push ix
-;	push iy
-    
+    ld iy, (_osiy)
+   
     ld a, #0x02 ; make path
     exx                             ; place parameters in alternates
     ld      de, #0x01b1             ; IDE_PATH
@@ -182,14 +183,16 @@ _makepath::
     rst     #0x8
     .db     #0x94                   ; +3dos call
 
-;	pop iy
-;	pop ix
-;	pop hl
-;	pop de
-;	pop bc
-;	pop af
-
 	ret
     
 
+;extern void conprint(char *txt) __z88dk_fastcall;
+_conprint:
+    ld iy, (_osiy)
+    ld a, (hl)
+    and a, a
+    ret z
+    rst 16
+    inc hl
+    jp _conprint
 _endof_esxdos:	

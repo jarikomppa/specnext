@@ -118,7 +118,7 @@ def main():
     print("by Jari Komppa 2020")
     print()
     hostinfo = socket.gethostbyname_ex(socket.gethostname())    
-    print(f"Running on host:{hostinfo[0]}")
+    print(f"Running on host:\n    {hostinfo[0]}")
     if hostinfo[1] != []:
         print("Aliases:")
         for x in hostinfo[1]:
@@ -127,6 +127,13 @@ def main():
         print("IP addresses:")
         for x in hostinfo[2]:
             print(f"    {x}")
+
+    # If we're unsure of the ip, try getting it via internet connection
+    if len(hostinfo[2]) > 1 or "127" in hostinfo[2][0]:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80)) # ping google dns
+            print(f"Primary IP:\n    {s.getsockname()[0]}")
+            
 
     warnings()
     
