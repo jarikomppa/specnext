@@ -1,4 +1,4 @@
-NextSync 0.9
+NextSync 1.0
 by Jari Komppa 2020
 http://iki.fi/sol
 
@@ -76,9 +76,9 @@ DESKTOP SIDE SETUP
         NextSync server, protocol version NextSync3
         by Jari Komppa 2020
 
-        Running on host: DESKTOP-NEW2020
+        Running on host: 
+            DESKTOP-NEW2020
         IP addresses:
-            192.168.56.1
             192.168.1.225
 
         Note: Using C:\specnext\nextsync as sync root
@@ -258,7 +258,6 @@ you can tell the server to send slightly oversized "unsafe" packets:
 nextsync.py -u
 
 
-
 Benchmarks
 ----------
 
@@ -306,7 +305,7 @@ All server sent packages are encapsulated with
 [2 bytes big endian whole packet size][payload][checksums, 2 bytes][packet number, 1 byte]
 
 Where checksum1 and checksum2 are calculated by:
-checksum1=0
+checksum1 = 0
 checksum2 = 0
 for every x in payload:
   checksum1 = checksum1 xor x
@@ -325,7 +324,7 @@ server: [file length 4 bytes big endian][filename length 1 byte][filename]
 
 Next chunk:
 next: "Get"
-server: [up to 1024 bytes]
+server: [up to 1455 bytes; up to 1024 by default, up to 256 in safe mode]
 - If file has ended, payload is empty
 
 Retry:
