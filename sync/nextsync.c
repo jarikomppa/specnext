@@ -525,7 +525,7 @@ void main()
         conprint(
            //12345678901234567890123456789012
             "SYNC v1.0 by Jari Komppa\r"
-            "Transfer files from PC to next\r"
+            "Wifi transfer files from PC\r"
             "\r"
             "SYNOPSIS:\r"
             ".SYNC [servername/ip addr]\r"
@@ -535,7 +535,7 @@ void main()
             "address or name to save config.\r"
             "\r"
             "Please read nextsync.txt for\r"
-            "more instructions.\r");
+            "further instructions.\r\r");
         goto terminate;
     }
         
@@ -570,7 +570,7 @@ void main()
               "server configuration.\r\r"
               "(Running nextsync.py shows\r"
               "both server name and the ip\r"
-              "address)");
+              "address)\r\r");
         goto terminate;
     }
 

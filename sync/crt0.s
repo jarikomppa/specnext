@@ -49,11 +49,19 @@ _crt0_entry:
 ;		ld sp, #0xffff ; for mmu7
 		ld sp, #0x9fff ; for mmu4
 
+    ; set up dot command error handler - if we get an error,
+    ; do the crt0 cleanup
+    ld      hl, #shutdown
+	rst     #0x8
+	.db     #0x95
+
+
 		call gsinit			; init static vars (sdcc style)
 
 		;; start the os
 		call _main			
 
+shutdown:
     	ld	    a,      #0x54 ; nextreg
         ld      bc,     #0x243B   ; nextreg select
         out     (c),    a
