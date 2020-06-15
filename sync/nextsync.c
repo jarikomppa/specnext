@@ -512,6 +512,7 @@ void main()
     unsigned long filelen;
     unsigned char *dp;
     unsigned short len = 0;     
+    unsigned char nextreg6;
     unsigned char nextreg7;
     char fastuart = 0;
     char filehandle;
@@ -578,6 +579,8 @@ void main()
     fclose(filehandle);
     fn[len] = 0;
 
+    nextreg6 = readnextreg(0x06);
+    writenextreg(0x06, nextreg6 & 0x7d); // disable turbo key & 50/60 switch (leave other bits alone)
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
 
@@ -727,6 +730,7 @@ bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
     print("All done");
     writenextreg(0x07, nextreg7); // restore cpu speed
+    writenextreg(0x06, nextreg6); // restore turbo key & 50/60 switch
 #ifdef DISKLOG
     fclose(dbg);
 #endif
