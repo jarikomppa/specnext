@@ -19,7 +19,8 @@ import os
 assert sys.version_info >= (3, 6) # We need 3.6 for f"" strings.
 
 PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
-VERSION = "NextSync3"
+VERSION3 = "NextSync3"
+VERSION = "NextSync4"
 IGNOREFILE = "syncignore.txt"
 SYNCPOINT = "syncpoint.dat"
 MAX_PAYLOAD = 1024
@@ -72,13 +73,62 @@ def getFileList():
             if not ignored:
                 stats = os.stat(g)
                 r.append([g, stats.st_size])
-    return r;
+    return r
 
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def compress16(d):
+    l = []
+    prev = d[0]
+    run = 0
+    skip = 0
+    skipofs = 0
+    for i, v in enumerate(d):
+        flushrun = False
+        if v == prev:            
+            run += 1
+            if run == 0xffff:
+                flushrun = True
+        else:
+            if run > 8:
+                flushrun = True
+            else:
+                run = 0            
+        if flushrun:
+            l.append((skip - run) & 0xff)
+            l.append(((skip - run) >> 8) & 0xff)
+            for x in d[skipofs:skipofs+skip-run]:
+                l.append(x)
+            l.append(run & 0xff)
+            l.append((run >> 8) & 0xff)
+            l.append(prev)
+            run = 0
+            skip = 0
+            skipofs = i
+        skip += 1
+        if skip == 0xffff:
+            l.append(skip & 0xff)
+            l.append((skip >> 8) & 0xff)
+            for x in d[skipofs:skipofs+skip]:
+                l.append(x)
+            skip = 0
+            skipofs = i + 1
+            l.append(0)
+            l.append(0)
+            l.append(0)            
+        prev = v
+    l.append(skip & 0xff)
+    l.append((skip >> 8) & 0xff)
+    for x in d[skipofs:skipofs+skip]:
+        l.append(x)       
+    with open("packtest.dat", 'wb') as srcfile:
+        srcfile.write(bytes(l))
+
+    return bytes(l)
+
 def sendpacket(conn, payload, packetno):
-    checksum0 = 0; # random.choice([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]) # 5%
+    checksum0 = 0 # random.choice([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]) # 5%
     checksum1 = 0
     # packetno -= random.choice([0]*99+[1]) # 1%
     for x in payload:
@@ -94,7 +144,7 @@ def sendpacket(conn, payload, packetno):
           
 def warnings():
     print()
-    print(f"Note: Using {os.getcwd()} as sync root");
+    print(f"Note: Using {os.getcwd()} as sync root")
     if not os.path.isfile(IGNOREFILE):
         print(f"Warning! Ignore file {IGNOREFILE} not found in directory. All files will be synced, possibly including this file.")
     if not os.path.isfile(SYNCPOINT):
@@ -145,7 +195,7 @@ def main():
         retries = 0
         packets = 0
         restarts = 0
-        gee = 0
+        gee = 0        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", PORT))
             s.listen()
@@ -158,7 +208,7 @@ def main():
             if os.path.isfile(SYNCPOINT):
                 with open(SYNCPOINT) as kf:
                     knownfiles = kf.read().splitlines()
-            fn = 0;
+            fn = 0
             filedata = b''
             packet = b''
             fileofs = 0
@@ -166,6 +216,7 @@ def main():
             packetno = 0
             starttime = time.time()
             endtime = starttime
+            rle = True
             with conn:                
                 print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
                 talking = True                
@@ -175,12 +226,20 @@ def main():
                         break
                     decoded = data.decode()
                     print(f'{timestamp()} | Data received: "{decoded}", {len(decoded)} bytes')
-                    if data == b"Sync3":
+                    if data == b"Sync4":
                         print(f'{timestamp()} | Sending "{VERSION}"')
                         packet = str.encode(VERSION)
                         sendpacket(conn, packet, 0)
                         packets += 1
                         totalbytes += len(packet)
+                        rle = True
+                    elif data == b"Sync3":
+                        print(f'{timestamp()} | Sending "{VERSION3}"')
+                        packet = str.encode(VERSION3)
+                        sendpacket(conn, packet, 0)
+                        packets += 1
+                        totalbytes += len(packet)
+                        rle = False
                     elif data == b"Next":
                         if fn >= len(f):
                             print(f"{timestamp()} | Nothing (more) to sync")
@@ -199,6 +258,8 @@ def main():
                             totalbytes += len(packet)
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
+                            if rle:
+                                filedata = compress16(filedata)
                             if f[fn][0] not in knownfiles:
                                 knownfiles.append(f[fn][0])
                             fileofs = 0
@@ -243,7 +304,6 @@ def main():
                         print(f"{timestamp()} | Unknown command")
                         sendpacket(conn, str.encode("Error"), 0)
                 endtime = time.time()
-                #time.sleep(1); # allow the next to close first        
         deltatime = endtime - starttime
         print(f"{timestamp()} | {totalbytes/1024:.2f} kilobytes transferred in {deltatime:.2f} seconds, {(totalbytes/deltatime)/1024:.2f} kBps")
         print(f"{timestamp()} | packets: {packets}, retries: {retries}, restarts: {restarts}, gee: {gee}")

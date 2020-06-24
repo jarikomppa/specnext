@@ -15,8 +15,8 @@ extern const unsigned char fona_png[];
 //#define SYNCSLOW
 //#define SYNCFAST
 
-//#define DEBUGMODE
-//#define DISKLOG
+//#define DEBUGMODE // these are a bit broken at the moment
+//#define DISKLOG   // but I'll leave them in so they're easier to rebuild
 
 #ifdef DEBUGMODE
 #define SETX(x) 
@@ -442,13 +442,17 @@ unsigned char createfilewithpath(char * fn)
 }
 
 
-void transfer(char *fn, char *inbuf)
+void transfer(char *fn, unsigned char *inbuf, unsigned char *scratch)
 {
     unsigned char *dp;
     unsigned long received = 0;
     unsigned short len;
     unsigned char filehandle;
     unsigned char packetno = 0;
+    unsigned char unpackstate = 0;
+    unsigned short unpackcount = 0;
+    unsigned short p = 0;
+    unsigned short d = 0;
 restart:
     filehandle = createfilewithpath(fn);
     if (filehandle == 0)
@@ -461,9 +465,9 @@ restart:
         {
             cipxfer("Get", 3, inbuf, &len, &dp);
 retry:
-            if (dp[len-1] != packetno)
+            if (dp[len - 1] != packetno)
             {
-                if (len == 5+3 && checksum(dp, len-3)==0 && memcmp(dp, "Error", 5) == 0)
+                if (len == 5+3 && checksum(dp, len - 3) == 0 && memcmp(dp, "Error", 5) == 0)
                 {
                     goto doretry;
                 }
@@ -475,17 +479,85 @@ retry:
                 received = 0;
                 goto restart;
             }
-            if (len && checksum(dp, len-3)==0)
+            
+            if (len && checksum(dp, len - 3) == 0)
             {
-                received += len - 3;
-                // skip every second print for tiny speedup (except the last print)
-                if (len <= 3 || (received & 1024) == 0) 
+                len -= 3;
+                d = 0;
+                p = 0;
+                /*
+                unpackstate state machine
+                0 - skip count next
+                1 - last byte of skip count next
+                2 - skipping
+                3 - run count next
+                4 - last byte of run count next
+                5 - run data byte next
+                */
+                if (unpackstate == 2 && unpackcount >= len)
                 {
-                    SETX(5);
-                    printnum(received);
-                    SETY(scr_y -1);
+                    // Early out case: we're in the middle of a long "skip"
+                    fwrite(filehandle, dp, len);
+                    received += len;
+                    unpackcount -= len;
+                    if (unpackcount == 0)
+                        unpackstate = 3;
                 }
-                fwrite(filehandle, dp, len-3);
+                else
+                {
+                    while (p < len)
+                    {
+                        switch (unpackstate)
+                        {
+                        case 0: // first byte of counter (skip, run)
+                        case 3:
+                            unpackcount = dp[p];
+                            unpackstate++;
+                            p++;
+                            break;
+                        case 1: // second byte of counter (skip, run)
+                        case 4:
+                            unpackcount += ((unsigned short)dp[p]) << 8;
+                            unpackstate++;
+                            p++;
+                            break;
+                        case 2: // skip - copy N bytes
+                            while (p < len && d < 1024 && unpackcount != 0)
+                            {
+                                scratch[d] = dp[p];
+                                p++;
+                                d++;
+                                unpackcount--;
+                            }
+                            if (unpackcount == 0)
+                                unpackstate++;
+                            break;
+                        case 5: // run - repeat current byte N times
+                            while (d < 1024 && unpackcount != 0)
+                            {
+                                scratch[d] = dp[p];
+                                d++;
+                                unpackcount--;
+                            }
+                            if (unpackcount == 0)
+                            {
+                                p++;
+                                unpackstate = 0;
+                            }
+                            break;                                
+                        }
+                        // if our write buffer is full or we've reached end of input, write out
+                        if (d == 1024 || p == len)
+                        {
+                            fwrite(filehandle, scratch, d);
+                            received += d;
+                            d = 0;
+                        }
+                    }
+                }
+                SETX(5);
+                printnum(received);
+                SETY(scr_y -1);                
                 packetno++;
             }
             else
@@ -496,7 +568,7 @@ doretry:
                 goto retry;
             }
         } 
-        while (len > 3);
+        while (len != 0);
         fclose(filehandle);
     }
 }
@@ -507,7 +579,8 @@ void main()
     const char *cipstart_postfix = "\",2048\r\n";
     const char *conffile         = "c:/sys/config/nextsync.cfg";
     char fn[256];
-    char inbuf[4096];    
+    char inbuf[2048];
+    char scratch[2048];
     unsigned char fnlen;
     unsigned long filelen;
     unsigned char *dp;
@@ -519,8 +592,11 @@ void main()
     char retrycount;
 
     len = parse_cmdline(fn);
+
+    if (!len)
+        filehandle = fopen((char*)conffile, 1); // read + open existing
         
-    if (len && fn[0] == '-')
+    if ((len && fn[0] == '-') || (!len && filehandle == 0))
     {
         // Probably asking for help.
         conprint(
@@ -557,21 +633,6 @@ void main()
         fwrite(filehandle, fn, len);
         fclose(filehandle);        
         conprint("Ok\r");
-        goto terminate;
-    }
-
-    filehandle = fopen((char*)conffile, 1); // read + open existing
-    if (filehandle == 0)        
-    {
-            // 12345678901234567890123456789012
-        conprint(
-              "Server configuration not found.\r\r"
-              "Give server name or ip address\r"
-              "as a parameter to create the\r"
-              "server configuration.\r\r"
-              "(Running nextsync.py shows\r"
-              "both server name and the ip\r"
-              "address)\r\r");
         goto terminate;
     }
 
@@ -644,13 +705,11 @@ retryconnect:
     retrycount = 10;
     while (retrycount && atcmd("AT+CIPCLOSE\r\n", "ERROR", 5, inbuf)) { retrycount--; }
 
-    // Build the cipstart command in the huge buffer we have,
-    // far enough that the atcommand shouldn't wreck it..
-    memcpy(inbuf+2048, cipstart_prefix, 19);
-    memcpy(inbuf+2048+19, fn, len);
-    memcpy(inbuf+2048+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
+    memcpy(scratch, cipstart_prefix, 19);
+    memcpy(scratch+19, fn, len);
+    memcpy(scratch+19+len, cipstart_postfix, 9); // take care to copy the terminating zero
 
-    if (atcmd(inbuf+2048, "OK", 2, inbuf))
+    if (atcmd(scratch, "OK", 2, inbuf))
     {
         print("Unable to connect");
         goto bailout;
@@ -661,9 +720,9 @@ retryconnect:
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
-    cipxfer("Sync3", 5, inbuf, &len, &dp);
+    cipxfer("Sync4", 5, inbuf, &len, &dp);
 
-    if (len < 9 || memcmp(dp, "NextSync3", 9) != 0)
+    if (len < 9 || memcmp(dp, "NextSync4", 9) != 0)
     {        
         retrycount++;
         if (retrycount < 5)
@@ -702,7 +761,7 @@ retrynext:
                 print(fn);
                 print("Size:\nXfer:"); SETX(5); SETY(scr_y - 2);
                 printnum(filelen);
-                transfer(fn, inbuf);
+                transfer(fn, inbuf, scratch);
                 checkscroll();
             }
         }
