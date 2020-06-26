@@ -37,6 +37,7 @@ src = [
 	"esxdos.s",
 	"uart.s",
 	"gfx.c",
+	"zunpack.s",
 	"nextsync.c"
 	]
 

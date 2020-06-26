@@ -441,6 +441,88 @@ unsigned char createfilewithpath(char * fn)
     return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
 }
 
+extern unsigned char unpackstate;
+extern signed short unpacksize;
+extern signed short unpackoffset;
+extern unsigned short unpackd;
+
+extern unsigned short zunpack(unsigned short len, unsigned char *dp, unsigned char *scratch, unsigned char filehandle);
+
+#if 0
+unsigned short zunpack(unsigned short len, unsigned char *dp, unsigned char *scratch, unsigned char filehandle)
+{
+    unsigned short p = 0;
+    unsigned short received = 0;
+    /*
+    unpackstate state machine
+    0 - size byte next
+    1 - writing out literals
+    2 - offset byte next
+    3 - copying from history
+    */
+    while (p < len)
+    {
+        switch (unpackstate)
+        {
+        case 0: // size byte
+            unpacksize = dp[p];
+            if ((unpacksize & 0xc0) == 0xc0)
+            {
+                unpacksize &= 0x3f;
+                unpackstate = 1;
+            }
+            else
+            {
+                unpackstate = 2;
+            }
+            p++;
+            break;
+        case 1: // literals - copy N literal bytes
+            while (p < len && unpackd < 1024 && unpacksize >= 0)
+            {
+                scratch[unpackd] = dp[p];
+                p++;
+                unpackd++;
+                unpacksize--;
+            }
+            if (unpacksize < 0)
+            {
+                unpackstate = 0;
+            }
+            break;
+        case 2: // offset byte
+            unpackoffset = -256 | (signed char)dp[p];
+            unpackoffset = (unpackd + unpackoffset + 1024) & 1023;
+            unpackstate = 3;
+            unpacksize += 3;
+            p++;
+            break;
+        case 3: // run - copy N bytes from history                        
+            while (unpackd < 1024 && unpacksize >= 0)
+            {
+                scratch[unpackd] = scratch[unpackoffset];
+                unpackd++;
+                unpackoffset++;
+                unpackoffset &= 1023;
+                unpacksize--;
+            }
+            if (unpacksize < 0)
+            {
+                unpackstate = 0;
+            }
+            break;                                
+        }
+        // if our write buffer is full or we've reached end of input, write out
+        if (unpackd == 1024 || p == len)
+        {
+            fwrite(filehandle, scratch, unpackd);
+            received += unpackd;
+            unpackd = 0;
+        }
+    }
+    return received;
+}
+#endif
 
 void transfer(char *fn, unsigned char *inbuf, unsigned char *scratch)
 {
@@ -452,7 +534,6 @@ void transfer(char *fn, unsigned char *inbuf, unsigned char *scratch)
     unsigned char unpackstate = 0;
     signed short size = 0;
     signed short offset = 0;
-    unsigned short p = 0;
     unsigned short d = 0;
 restart:
     filehandle = createfilewithpath(fn);
@@ -484,73 +565,7 @@ retry:
             if (len && checksum(dp, len - 3) == 0)
             {
                 len -= 3;
-                d = 0;
-                p = 0;
-                /*
-                unpackstate state machine
-                0 - size byte next
-                1 - writing out literals
-                2 - offset byte next
-                3 - copying from history
-                */
-                while (p < len)
-                {
-                    switch (unpackstate)
-                    {
-                    case 0: // size byte
-                        size = dp[p];
-                        if ((size & 0xc0) == 0xc0)
-                        {
-                            size &= 0x3f;
-                            unpackstate = 1;
-                        }
-                        else
-                        {
-                            unpackstate = 2;
-                        }
-                        p++;
-                        break;
-                    case 1: // literals - copy N literal bytes
-                        while (p < len && d < 1024 && size >= 0)
-                        {
-                            scratch[d] = dp[p];
-                            p++;
-                            d++;
-                            size--;
-                        }
-                        if (size < 0)
-                        {
-                            unpackstate = 0;
-                        }
-                        break;
-                    case 2: // offset byte
-                        offset = -256 | (signed char)dp[p];
-                        offset += 1024;
-                        unpackstate = 3;
-                        size += 3;
-                        p++;
-                        break;
-                    case 3: // run - copy N bytes from history                        
-                        while (d < 1024 && size >= 0)
-                        {
-                            scratch[d] = scratch[(d + offset) & 1023];
-                            d++;
-                            size--;
-                        }
-                        if (size < 0)
-                        {
-                            unpackstate = 0;
-                        }
-                        break;                                
-                    }
-                    // if our write buffer is full or we've reached end of input, write out
-                    if (d == 1024 || p == len)
-                    {
-                        fwrite(filehandle, scratch, d);
-                        received += d;
-                        d = 0;
-                    }
-                }
+                received += zunpack(len, dp, scratch, filehandle);
                 SETX(5);
                 printnum(received);
                 SETY(scr_y -1);                
