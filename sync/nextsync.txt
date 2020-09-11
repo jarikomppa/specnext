@@ -207,7 +207,7 @@ The file contains list of files synced, so even if you manage to create
 files that are older, they will be synced. All known files that are newer
 than the syncpoint file are also synced.
 
-To force sync all of the files (once), delete this file.
+To force sync all of the files (once), delete the syncpoint.dat file.
 
 If you want to always sync all of the files for whatever reason
 (maybe you're running a specnext copyparty or something?) you can
@@ -292,8 +292,6 @@ of the handshaking;
 462.72 kilobytes transferred in 60.20 seconds,  7.69 kBps - syncslow, -u
 462.72 kilobytes transferred in 62.08 seconds,  7.45 kBps - syncslow
 462.72 kilobytes transferred in 75.41 seconds,  6.14 kBps - syncslow, -s
-
-
 
 
 Protocol

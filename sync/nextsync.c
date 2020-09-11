@@ -12,20 +12,11 @@ extern const unsigned char fona_png[];
 #define TIMEOUT 20000
 #define TIMEOUT_FLUSHUART 10000
 
-//#define SYNCSLOW
-//#define SYNCFAST
-
-//#define DEBUGMODE // these are a bit broken at the moment
-//#define DISKLOG   // but I'll leave them in so they're easier to rebuild
-
-#ifdef DEBUGMODE
-#define SETX(x) 
-#define SETY(y) 
-#else
 #define SETX(x) scr_x = (x)
 #define SETY(y) scr_y = (y)
-#endif
 
+//#define SYNCSLOW
+//#define SYNCFAST
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
@@ -105,21 +96,6 @@ void memset(char *a, char b, unsigned short l)
     }
 }
 
-#ifdef DEBUGMODE
-void drawcharx(unsigned char c)
-{
-    unsigned char i;
-    unsigned char *p = (unsigned char*)yofs[scr_y] + scr_x;
-    unsigned short ofs = c * 8;
-    for (i = 0; i < 8; i++)
-    {
-        *p = fona_png[ofs] ^ 0xff;
-        ofs++;
-        p += 256;
-    }
-}
-#endif
-
 extern void drawchar(unsigned char c);
 
 extern void scrollup();
@@ -128,9 +104,6 @@ extern void checkscroll();
 
 void print(char * t)
 {
-#ifdef DEBUGMODE
-t;
-#else
     while (*t)
     {
         if (*t == '\n')
@@ -154,54 +127,18 @@ t;
     scr_y++;
     scr_x = 0;
     checkscroll();
-#endif
 }
-
-#ifdef DEBUGMODE
-void putchar(char t)
-{
-    drawchar(t);
-    scr_x++;
-    if (scr_x == 32)
-    {
-        scr_x = 0;
-        scr_y++;
-    }
-    checkscroll();
-}
-
-void putcharx(char t)
-{
-    drawcharx(t);
-    scr_x++;
-    if (scr_x == 32)
-    {
-        scr_x = 0;
-        scr_y++;
-    }
-    checkscroll();
-}
-#endif
 
 extern unsigned char uitoa(unsigned long v, char *b);
 
 void printnum(unsigned long v);
 
+// Just flush as much as is in the queue right now.
 void flush_uart()
 {
-#ifdef DISKLOG
-    fwrite(dbg, "[fu]", 4);
-#endif    
     while (readuarttx() & 1)
     {
-#ifdef DEBUGMODE
-        putcharx(readuartrx());
-#elif defined(DISKLOG)
-        char t = readuartrx();
-        fwrite(dbg, &t, 1);
-#else        
         readuartrx();
-#endif        
     }
 } 
 
@@ -209,47 +146,25 @@ void flush_uart()
 void flush_uart_hard()
 {
     unsigned short timeout = TIMEOUT_FLUSHUART;
-#ifdef DISKLOG
-    fwrite(dbg, (char*)"[fuh]", 5);
-#endif    
     while (timeout)
     {
         if (readuarttx() & 1)
         {
-#ifdef DEBUGMODE
-            putcharx(readuartrx());
-#elif defined(DISKLOG)
-            char t = readuartrx();
-            fwrite(dbg, &t, 1);
-#else        
             readuartrx();
-#endif        
             timeout = TIMEOUT_FLUSHUART;
         }
         timeout--;
     }
 }
 
-
-#if defined(DEBUGMODE)
-unsigned short receive(unsigned char *b)
-{
-    unsigned short count = 0;
-    while (readuarttx() & 1)
-    {
-        *b = readuartrx();
-        count++;
-        putchar(*b);
-        b++;
-    }
-    return count;
-} 
-#endif
-
 unsigned char receive_slow()
 {
     unsigned short timeout = TIMEOUT;
-    while (timeout && !(readuarttx() & 1)) { timeout--; } // wait for data.
+    while (timeout && !(readuarttx() & 1)) 
+    { 
+        // wait for data.
+        timeout--; 
+    } 
     return readuartrx(); // returns 0 on no data
 }
 
@@ -257,10 +172,6 @@ void send(const char *b, unsigned char bytes)
 {
     unsigned short timeout = TIMEOUT;
     unsigned char t;
-#ifdef DISKLOG
-    fwrite(dbg, (char*)"[s]", 3);
-    fwrite(dbg, (char*)b, bytes);
-#endif    
     while (timeout && bytes)
     {
         // busy wait until byte is transmitted
@@ -336,29 +247,17 @@ retryatcmd:
         timeout--;
         if (strinstr(buf, expect, len, expectlen))
         {
-#ifdef DISKLOG
-        fwrite(dbg, "[at]", 4);
-        fwrite(dbg, buf, len);
-#endif
             return 0;
         }
         if (strinstr(buf, "busy", len, 4))
         {
             if (!retrycount)
                 return 1;
-#ifdef DISKLOG
-        fwrite(dbg, "[atb]", 5);
-        fwrite(dbg, buf, len);
-#endif
             len = 0;
             retrycount--;
             goto retryatcmd;
         }
     }    
-#ifdef DISKLOG
-    fwrite(dbg, "[at0]", 5);
-    fwrite(dbg, buf, len);
-#endif
     return 1;
 }
 
@@ -441,100 +340,13 @@ unsigned char createfilewithpath(char * fn)
     return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
 }
 
-extern unsigned char unpackstate;
-extern signed short unpacksize;
-extern signed short unpackoffset;
-extern unsigned short unpackd;
-
-extern unsigned short zunpack(unsigned short len, unsigned char *dp, unsigned char *scratch, unsigned char filehandle);
-
-#if 0
-unsigned short zunpack(unsigned short len, unsigned char *dp, unsigned char *scratch, unsigned char filehandle)
-{
-    unsigned short p = 0;
-    unsigned short received = 0;
-    /*
-    unpackstate state machine
-    0 - size byte next
-    1 - writing out literals
-    2 - offset byte next
-    3 - copying from history
-    */
-mainloop:    
-    while (p < len)
-    {
-        switch (unpackstate)
-        {
-        case 0: // size byte
-            unpacksize = dp[p];
-            p++;
-            if ((unpacksize & 0xc0) != 0xc0)
-            {
-                unpackstate = 2;
-                goto mainloop;
-            }
-            unpacksize &= 0x3f;
-            unpackstate = 1;
-            // fallthrough
-        case 1: // literals - copy N literal bytes
-            while (p < len && !(unpackd & 1024) && unpacksize >= 0)
-            {
-                scratch[unpackd] = dp[p];
-                p++;
-                unpackd++;
-                unpacksize--;
-            }
-            if (unpacksize < 0)
-            {
-                unpackstate = 0;
-            }
-            break;
-        case 2: // offset byte
-            unpackoffset = ((signed short)-256) | (signed char)dp[p];
-            p++;
-            unpackoffset = (unpackd + unpackoffset + 1024) & 1023;
-            unpackstate = 3;
-            unpacksize += 3;
-            // fallthrough
-        case 3: // run - copy N bytes from history                        
-            while (!(unpackd & 1024) && unpacksize >= 0)
-            {
-                unpacksize--;
-                scratch[unpackd] = scratch[unpackoffset];
-                unpackd++;
-                unpackoffset++;
-                unpackoffset &= 1023;
-            }
-            if (unpacksize < 0)
-            {
-                unpackstate = 0;
-            }
-            break;                                
-        }
-        // if our write buffer is full or we've reached end of input, write out
-        if (unpackd & 1024 || (!(len & 1024) && p == len))
-        {
-            fwrite(filehandle, scratch, unpackd);
-            received += unpackd;
-            unpackd &= 1023;
-        }
-    }
-    return received;
-}
-#endif
-
-void transfer(char *fn, unsigned char *inbuf, unsigned char *scratch)
+void transfer(char *fn, unsigned char *inbuf)
 {
     unsigned char *dp;
     unsigned long received = 0;
     unsigned short len;
     unsigned char filehandle;
     unsigned char packetno = 0;
-
-    unpackstate = 0;
-    unpacksize = 0;
-    unpackoffset = 0;
-    unpackd = 0;
 
 restart:
     filehandle = createfilewithpath(fn);
@@ -566,7 +378,8 @@ retry:
             if (len && checksum(dp, len - 3) == 0)
             {
                 len -= 3;
-                received += zunpack(len, dp, scratch, filehandle);
+                received += len;
+                fwrite(filehandle, dp, len);                
                 SETX(5);
                 printnum(received);
                 SETY(scr_y -1);                
@@ -667,10 +480,6 @@ void main()
     print("http://iki.fi/sol");
     SETY(scr_y+1);
 
- 
-#ifdef DISKLOG
-    dbg = createfilewithpath((char*)"syncdebug.dat");
-#endif 
     // select esp uart, set 17-bit prescalar top bits to zero
     writeuartctl(16); 
     // set the baud rate (default)
@@ -732,9 +541,9 @@ retryconnect:
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
-    cipxfer("Sync4", 5, inbuf, &len, &dp);
+    cipxfer("Sync3", 5, inbuf, &len, &dp);
 
-    if (len < 9 || memcmp(dp, "NextSync4", 9) != 0)
+    if (len < 9 || memcmp(dp, "NextSync3", 9) != 0)
     {        
         retrycount++;
         if (retrycount < 5)
@@ -773,7 +582,7 @@ retrynext:
                 print(fn);
                 print("Size:\nXfer:"); SETX(5); SETY(scr_y - 2);
                 printnum(filelen);
-                transfer(fn, inbuf, scratch);
+                transfer(fn, inbuf);
                 checkscroll();
             }
         }
@@ -802,9 +611,6 @@ bailout:
     print("All done");
     writenextreg(0x07, nextreg7); // restore cpu speed
     writenextreg(0x06, nextreg6); // restore turbo key & 50/60 switch
-#ifdef DISKLOG
-    fclose(dbg);
-#endif
 terminate:
     return;
 }

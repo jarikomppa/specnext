@@ -37,7 +37,6 @@ src = [
 	"esxdos.s",
 	"uart.s",
 	"gfx.c",
-	"zunpack.s",
 	"nextsync.c"
 	]
 
@@ -46,7 +45,7 @@ src = [
 product = [
 	"crt0.ihx",
 	"*",
-	"sync.dot",
+	"syncdev.dot",
 	"*",
 	"+c.bat"
 	]

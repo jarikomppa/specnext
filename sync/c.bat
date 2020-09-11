@@ -1,2 +1,2 @@
-@copy /y sync.dot server\dot\sync
+@copy /y syncdev.dot server\dot\syncdev
 
