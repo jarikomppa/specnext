@@ -159,13 +159,14 @@ void flush_uart_hard()
 
 unsigned char receive_slow()
 {
-    unsigned short timeout = TIMEOUT;
+    unsigned short timeout = 20;
     while (timeout && !(readuarttx() & 1)) 
     { 
         // wait for data.
         timeout--; 
-    } 
-    return readuartrx(); // returns 0 on no data
+    }
+    if (!timeout) return 0;
+    return readuartrx();
 }
 
 void send(const char *b, unsigned char bytes)
@@ -219,6 +220,7 @@ unsigned short bufinput(char *buf)
         r = receive_slow();
         if (r != ':' && (r < '0' || r > '9')) return 0;
     }
+
     if (datalen > 2048 || datalen == 0) return 0;
     do
     {
@@ -226,6 +228,7 @@ unsigned short bufinput(char *buf)
         timeout--;
     }
     while (timeout && ofs < datalen);
+
     return ofs;    
 }
 
@@ -267,7 +270,7 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
     const char *cipsendcmd_c="AT+CIPSENDEX=0\r\n";
     char *cipsendcmd = (char *)cipsendcmd_c;
     unsigned short received, expected;
-    unsigned short timeout = 16; // relatively small timeout needed because bufinput has timeout
+    unsigned short timeout = 5; // relatively small timeout needed because bufinput has timeout
     cipsendcmd[13] = '0' + cmdlen;
     *len = 0;
     if (atcmd(cipsendcmd, ">", 1, output)) // cipsend prompt
@@ -340,62 +343,72 @@ unsigned char createfilewithpath(char * fn)
     return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
 }
 
-void transfer(char *fn, unsigned char *inbuf)
+char transfer(char *fn, unsigned char *inbuf)
 {
     unsigned char *dp;
     unsigned long received = 0;
     unsigned short len;
     unsigned char filehandle;
     unsigned char packetno = 0;
+    unsigned char failcount = 0;
 
 restart:
     filehandle = createfilewithpath(fn);
     if (filehandle == 0)
     {
         print("Unable to open file");
+        return 0;
     }
-    else
-    {            
-        do
-        {
-            cipxfer("Get", 3, inbuf, &len, &dp);
+
+    do
+    {
+        cipxfer("Get", 3, inbuf, &len, &dp);
 retry:
-            if (dp[len - 1] != packetno)
+        if (dp[len - 1] != packetno)
+        {
+            if (len == 5+3 && checksum(dp, len - 3) == 0 && memcmp(dp, "Error", 5) == 0)
             {
-                if (len == 5+3 && checksum(dp, len - 3) == 0 && memcmp(dp, "Error", 5) == 0)
-                {
-                    goto doretry;
-                }
-                flush_uart_hard();
-                cipxfer("Restart", 7, inbuf, &len, &dp);
-                fclose(filehandle);
-                len = 0;
-                packetno = 0;
-                received = 0;
-                goto restart;
+                goto doretry;
             }
-            
-            if (len && checksum(dp, len - 3) == 0)
-            {
-                len -= 3;
-                received += len;
-                fwrite(filehandle, dp, len);                
-                SETX(5);
-                printnum(received);
-                SETY(scr_y -1);                
-                packetno++;
-            }
-            else
-            {                
+            flush_uart_hard();
+            cipxfer("Restart", 7, inbuf, &len, &dp);
+            fclose(filehandle);
+            len = 0;
+            packetno = 0;
+            received = 0;
+            failcount++;
+            if (failcount > 5) goto failure;                        
+            goto restart;
+        }
+        
+        if (len && checksum(dp, len - 3) == 0)
+        {
+            len -= 3;
+            received += len;
+            fwrite(filehandle, dp, len);
+            SETX(5);
+            printnum(received);
+            SETY(scr_y -1);                
+            packetno++;
+            failcount = 0;
+        }
+        else
+        {                
 doretry:
-                flush_uart_hard();
-                cipxfer("Retry", 5, inbuf, &len, &dp);
-                goto retry;
-            }
-        } 
-        while (len != 0);
-        fclose(filehandle);
-    }
+            failcount++;
+            if (failcount > 5) goto failure;
+            flush_uart_hard();
+            cipxfer("Retry", 5, inbuf, &len, &dp);
+            goto retry;
+        }
+    } 
+    while (len != 0);
+
+    fclose(filehandle);
+    return 0;
+failure:
+    fclose(filehandle);
+    return 1;
 }
 
 void main()
@@ -537,7 +550,6 @@ retryconnect:
     }
         
     print("Handshake..");
-    
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
@@ -582,7 +594,11 @@ retrynext:
                 print(fn);
                 print("Size:\nXfer:"); SETX(5); SETY(scr_y - 2);
                 printnum(filelen);
-                transfer(fn, inbuf);
+                if (transfer(fn, inbuf))
+                {
+                    print("Lost connection.");
+                    goto closeconn;
+                }
                 checkscroll();
             }
         }
