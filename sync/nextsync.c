@@ -34,13 +34,10 @@ extern unsigned char readnextreg(unsigned char reg);
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
 
-extern void writeuarttx(unsigned char val);
-extern unsigned char readuarttx();
-extern void writeuartrx(unsigned char val);
-extern unsigned char readuartrx();
-extern void writeuartctl(unsigned char val);
-extern unsigned char readuartctl();
-extern void setupuart(unsigned char rateindex) __z88dk_fastcall;
+__sfr __banked __at 0x133b UART_TX;
+__sfr __banked __at 0x143b UART_RX;
+__sfr __banked __at 0x153b UART_CTL;
+
 extern unsigned short receive(char *b);
 extern char checksum(char *dp, unsigned short len);
 
@@ -52,6 +49,35 @@ extern char *cmdline;
 extern unsigned char scr_x;
 extern unsigned char scr_y;
 extern char dbg;
+
+// See calc_prescalar.c for the prescalar calculation code
+static const unsigned short prescalar_values[] = {
+  243,   248,   255,   260,   269,   277,   286,   234, // (0) 115200
+  486,   496,   511,   520,   538,   555,   572,   468, // (1) 57600
+  729,   744,   767,   781,   807,   833,   859,   703, // (2) 38400
+  896,   914,   942,   960,   992,  1024,  1056,   864, // (3) 31250
+ 1458,  1488,  1534,  1562,  1614,  1666,  1718,  1406, // (4) 19200
+ 2916,  2976,  3069,  3125,  3229,  3333,  3437,  2812, // (5) 9600
+ 5833,  5952,  6138,  6250,  6458,  6666,  6875,  5625, // (6) 4800
+11666, 11904, 12276, 12500, 12916, 13333, 13750, 11250, // (7) 2400
+  121,   124,   127,   130,   134,   138,   143,   117, // (8) 230400
+   60,    62,    63,    65,    67,    69,    71,    58, // (9) 460800
+   48,    49,    51,    52,    53,    55,    57,    46, // (10) 576000
+   30,    31,    31,    32,    33,    34,    35,    29, // (11) 921600
+   24,    24,    25,    26,    26,    27,    28,    23, // (12) 1152000
+   18,    19,    19,    20,    20,    21,    22,    18, // (13) 1500000
+   14,    14,    14,    15,    15,    16,    16,    13  // (14) 2000000    
+};
+
+// Uart setup based on code by D. ‘Xalior’ Rimron-Soutter
+void setupuart(char mode)
+{
+   unsigned short prescalar = prescalar_values[mode * 8 + (readnextreg(0x11) & 0x07)];
+   
+   UART_CTL = (UART_CTL & 0x40) | 0x10 | (unsigned char)(prescalar >> 14);
+   UART_RX = 0x80 | (unsigned char)(prescalar >> 7);
+   UART_RX = (unsigned char)(prescalar) & 0x7f;
+}
 
 unsigned char parse_cmdline(char *f)
 {
@@ -136,9 +162,9 @@ void printnum(unsigned long v);
 // Just flush as much as is in the queue right now.
 void flush_uart()
 {
-    while (readuarttx() & 1)
+    while (UART_TX & 1)
     {
-        readuartrx();
+        UART_RX;
     }
 } 
 
@@ -148,9 +174,9 @@ void flush_uart_hard()
     unsigned short timeout = TIMEOUT_FLUSHUART;
     while (timeout)
     {
-        if (readuarttx() & 1)
+        if (UART_TX & 1)
         {
-            readuartrx();
+            UART_RX;
             timeout = TIMEOUT_FLUSHUART;
         }
         timeout--;
@@ -159,14 +185,18 @@ void flush_uart_hard()
 
 unsigned char receive_slow()
 {
+#ifdef SYNCSLOW
+    unsigned short timeout = 200;
+#else
     unsigned short timeout = 20;
-    while (timeout && !(readuarttx() & 1)) 
+#endif    
+    while (timeout && !(UART_TX & 1)) 
     { 
         // wait for data.
         timeout--; 
     }
     if (!timeout) return 0;
-    return readuartrx();
+    return UART_RX;
 }
 
 void send(const char *b, unsigned char bytes)
@@ -179,11 +209,11 @@ void send(const char *b, unsigned char bytes)
         do
         {
             timeout--;
-            t = readuarttx();
+            t = UART_TX;
         }
         while (timeout && t & 2);
         
-        writeuarttx(*b);
+        UART_TX = *b;
 
         gPort254 = *b & 7;
         b++;
@@ -300,12 +330,13 @@ void cipxfer(char *cmd, unsigned char cmdlen, unsigned char *output, unsigned sh
     *len = received - 2; // reduce size bytes    
 }
 
+#ifndef SYNCSLOW
 char gofast(char *inbuf)
 {
 #ifdef SYNCFAST    
     #define FAST_UART_MODE 14    
     atcmd("AT+UART_CUR=2000000,8,1,0,0\r\n", "", 0, inbuf);
-#else    
+#else
     #define FAST_UART_MODE 12
     atcmd("AT+UART_CUR=1152000,8,1,0,0\r\n", "", 0, inbuf);
 #endif    
@@ -319,6 +350,7 @@ char gofast(char *inbuf)
     }     
     return 0;
 }
+#endif
 
 unsigned char createfilewithpath(char * fn)
 {
@@ -494,7 +526,7 @@ void main()
     SETY(scr_y+1);
 
     // select esp uart, set 17-bit prescalar top bits to zero
-    writeuartctl(16); 
+    UART_CTL = 16; 
     // set the baud rate (default)
     setupuart(0);
 

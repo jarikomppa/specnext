@@ -381,4 +381,5 @@ side, a couple common mistransmissions are accepted.
 
 Sometimes the esp may just have a brain fart and send kilobytes
 of noise to the z80. This is pretty hard to deal with, so sometimes
-transfers just break, or hang.
+transfers just break, or hang. Often NextSync survives these but
+may take a while.
