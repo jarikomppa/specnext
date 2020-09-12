@@ -78,74 +78,6 @@ def getFileList():
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def compress(d):
-    o = []
-    r = 0
-    individual_count = 0
-    individual = 0
-       
-    def flush_individual():
-        nonlocal d
-        nonlocal individual
-        nonlocal individual_count
-        if individual_count == 0:
-            return
-        o.append((individual_count - 1) | 0xc0)
-        o.extend(d[individual:individual + individual_count])
-        individual += individual_count
-        individual_count = 0
-
-    while r < len(d):
-        p = max(r - 256, 0)
-        known_good = 4
-        known_bad = min(0x7f + 0x40 + 4, len(d) - r)
-        v = known_good
-        res = d[p:r + v - 1].find(d[r:r + v])
-        best_size = 0
-        best_pos = 0
-        
-        if res != -1:
-            v = known_bad
-            res = d[p:r + v - 1].find(d[r:r + v])            
-            if res != -1:
-                best_size = v
-                best_pos = res + p
-            else:
-                while known_bad - known_good > 1:
-                    v = int((known_good + known_bad) / 2)
-                    res = d[p:r + v - 1].find(d[r:r + v])
-                    if res == -1:
-                        known_bad = v
-                    else:
-                        known_good = v
-                        best_size = known_good
-                        best_pos = res + p
-#                    print(f"{known_good} {known_bad} {v}")
-        
-        if best_size > 3:
-            # copy
-            flush_individual()
-            best_size = min(best_size, 0x7f + 0x40 + 4)
-            individual += best_size
-            offset = best_pos - r
-            r += best_size
-            best_size -= 4
-#            print(f"size={best_size} offset={offset}")
-            assert offset >= -256
-            assert offset < 0
-            o.append(best_size)
-            if offset < 0:
-                offset += 256
-            o.append(offset)
-        else:
-            # individual bytes
-            individual_count += 1
-            if individual_count == 0x40:
-                flush_individual()
-            r += 1
-    flush_individual()
-    return bytes(o)
-
 def sendpacket(conn, payload, packetno):
     checksum0 = 0 # random.choice([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]) # 5%
     checksum1 = 0
@@ -236,7 +168,6 @@ def main():
             packetno = 0
             starttime = time.time()
             endtime = starttime
-            zpack = True
             with conn:                
                 print(f'{timestamp()} | Connected by {addr[0]} port {addr[1]}')
                 talking = True                
@@ -246,21 +177,15 @@ def main():
                         break
                     decoded = data.decode()
                     print(f'{timestamp()} | Data received: "{decoded}", {len(decoded)} bytes')
-                    if data == b"Sync4":
-                        print(f'{timestamp()} | Sending "{VERSION}"')
-                        packet = str.encode(VERSION)
-                        sendpacket(conn, packet, 0)
-                        packets += 1
-                        totalbytes += len(packet)
-                        zpack = True
-                    elif data == b"Sync3":
+                    if data == b"Sync3":
                         print(f'{timestamp()} | Sending "{VERSION3}"')
                         packet = str.encode(VERSION3)
                         sendpacket(conn, packet, 0)
                         packets += 1
                         totalbytes += len(packet)
-                        zpack = False
-                    elif data == b"Next":
+                    elif data == b"Next" or data == b"Neex": # Really common mistransmit. Probably uart-esp..
+                        if data == b"Neex":
+                            gee += 1
                         if fn >= len(f):
                             print(f"{timestamp()} | Nothing (more) to sync")
                             packet = b'\x00\x00\x00\x00\x00' # end of.
@@ -279,9 +204,6 @@ def main():
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
                             payloadbytes += len(filedata)
-                            if zpack:
-                                print(f"{timestamp()} | Compressing")
-                                filedata = compress(filedata)
                             if f[fn][0] not in knownfiles:
                                 knownfiles.append(f[fn][0])
                             fileofs = 0
