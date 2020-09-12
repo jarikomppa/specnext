@@ -79,6 +79,9 @@ DESKTOP SIDE SETUP
         Running on host: 
             DESKTOP-NEW2020
         IP addresses:
+            192.168.56.1
+            192.168.1.225
+        Primary IP:
             192.168.1.225
 
         Note: Using C:\specnext\nextsync as sync root
@@ -196,7 +199,17 @@ A lot of retries/restarts:
 
 It's so slow:
     - This is 8-bit technology we're talking about. You may wan to try
-      syncfast and/or running server with -u, but don't expect miracles.
+      syncfast and/or running server with -u, but don't expect miracles.    
+
+Nothing here helps:
+    - The esp-01 module in the next is a low-end part, and to make things
+      worse, there are various versions of it in different machines.
+      You may just be unlucky and have one that doesn't work with nextsync.
+    - It may be possible to update the firmware of your esp-01 module,
+      but you are (naturally) doing that at your own risk. On the other
+      hand, if it's already broken, you may have fairly little to lose.
+    - As an alternative, there are wifi-enabled SD cards in the market, 
+      you may wish to look into these.
 
 
 Server options
@@ -350,3 +363,22 @@ next:???
 server:"Error"
 - For other requests, server returns "Error"
 
+
+ESP-01 Challenges
+-----------------
+
+The wifi module in Next is a bit of a temperamental beast. There are
+a bunch of variables that make its use unreliable.
+
+First, there's different versions of it, some of which actually use
+slightly different AT command set. The commands that NextSync uses
+should be common to all versions, though. Timings and other behavior
+may still differ.
+
+Sometimes things are mistransmitted. NextSync deals with this by
+using checksums, so bad data transfers are unlikely. On the server
+side, a couple common mistransmissions are accepted.
+
+Sometimes the esp may just have a brain fart and send kilobytes
+of noise to the z80. This is pretty hard to deal with, so sometimes
+transfers just break, or hang.
