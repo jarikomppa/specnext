@@ -20,7 +20,9 @@ Usage example (combining three palettes):
 	idx[1] = sq_addcolormap(q, my_other_palette, 256, 3);
 	idx[2] = sq_addcolormap(q, my_yet_another_palette, 256, 3);
 	sq_reduce(q, &idxmap, &my_final_palette, NULL, 256);
+	...
 	final_palette_index = *(idxmap + idx[1] + old_color_index_in_my_other_palette);
+	...
 	free(idxmap);
 	free(my_final_palette);
 
@@ -33,7 +35,9 @@ Usage example (converting 32bpp RGBX image to paletted image):
 	q = sq_alloc();
 	sq_addcolormap(q, data, x * y, 4);
 	sq_reduce(q, &idxmap, &palette, &idxmapsize, 256);
-	... idxmap is now paletted image (with idxmapsize bytes), palette is 768 byte palette
+	... 
+	idxmap is now paletted image (with idxmapsize bytes), palette is 768 byte palette
+	...
 	free(idxmap);
 	free(palette);
 
@@ -83,14 +87,14 @@ extern int sq_reduce(SQ* q, int** idxmap, unsigned char** pal, int* outcolors, i
 
 #ifdef SOL_QMEDIAN_IMPLEMENTATION
 
-#include <stdlib.h> /* exit, malloc, free */
-#include <string.h> /* memset */
+#include <stdlib.h> // exit, malloc, free
+#include <string.h> // memset
 
-	/* re-sorting after quantization */
+// re-sort after quantization
 #define SQI_RE_SORT
-/* cut by light as well as r,g and b */
+// cut by brightness as well as r,g and b
 //#define SQI_CUT_LIGHTBASE
-/* kill duplicates */
+// kill duplicates
 #define SQI_DUPENUKE
 
 #define SQI_SWAP(a, b, c) { c = a; a = b; b = c; }
@@ -123,7 +127,8 @@ void* sqi_calloc(int size)
 {
 	void *temp;
 	temp = malloc(size);
-	if (temp == NULL) {
+	if (temp == NULL)
+	{
 		exit(1);
 	}
 	memset(temp, 0, size);
@@ -227,14 +232,14 @@ int sq_addcolormap(SQ* q, unsigned char* colmap, int colors, int stride)
  */
 void sqi_free_colmaps(SQ *q)
 {
-	struct sqi_colormapstruc *temp, *temp2;
-	temp = q->colmap;
-	while (temp != NULL) 
+	struct sqi_colormapstruc *walker, *prev;
+	walker = q->colmap;
+	while (walker != NULL)
 	{
-		temp2 = temp;
-		free(temp->col);
-		temp = temp->next;
-		free(temp2);
+		prev = walker;
+		free(walker->col);
+		walker = walker->next;
+		free(prev);
 	}
 }
 
@@ -320,6 +325,10 @@ struct sqi_colorstruc* sqi_cut_group(struct sqi_colorstruc *g, int component, in
 		second = g;
 		g = g->next;
 	}
+	if (second == NULL)
+	{
+		return NULL;
+	}
 	if (fore == NULL) 
 	{
 		second->next = NULL;
@@ -340,9 +349,10 @@ struct sqi_colorstruc* sqi_sort_group(struct sqi_colorstruc* col, int component)
 {
 	struct sqi_colorstruc *bucket[256], *top[256];
 	int a, s, l;
-	memset(bucket, 0, sizeof(bucket)); /* set bucket[n] to NULL */
-	/* Step 1: cut list into N lists */
-	while (col != NULL) {
+	memset(bucket, 0, sizeof(bucket)); // set bucket[n] to NULL
+	// Step 1: cut list into N lists
+	while (col != NULL) 
+	{
 		a = col->data.component[component];
 		if (bucket[a] == NULL) 
 		{
@@ -356,7 +366,7 @@ struct sqi_colorstruc* sqi_sort_group(struct sqi_colorstruc* col, int component)
 		col = col->next;
 		top[a]->next = NULL;
 	}
-	/* Step 2: re-link the list. */
+	// Step 2: re-link the list.
 	/* s = index of the first full bucket
      * l = last used bucket
 	 * a = counter
@@ -499,6 +509,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 		free(q);
 		return palwid;
 	}
+	// Set up, analyze initial group (i.e, all incoming colors)
 	groups = 1;
 	group[0] = q->first;
 	sqi_examine_group(group[0], &groupcomponent[0], &groupcomponentsize[0]);
@@ -509,6 +520,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 #endif
 	while (groups < (palwid - 1))
 	{
+		// Find largest group (in a dimension, not volume)
 		i = 0;
 		for (n = 0; n < groups; n++)
 		{
@@ -517,16 +529,20 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 				i = n;
 			}
 		}
+		// If the group was not sorted by its largest dimension, sort it
 		if (groupsorted[i] != groupcomponent[i])
 		{
 			group[i] = sqi_sort_group(group[i], groupcomponent[i]);
 			groupsorted[i] = groupcomponent[i];
 		}
+		// Cut the group in half at median point
 		group[groups] = sqi_cut_group(group[i], groupcomponent[i], groupcomponentsize[i]);
+		// If we can't cut, we're done
 		if (group[groups] == NULL)
 		{
 			break;
 		}
+		// Analyze, store, increment, continue.
 		sqi_examine_group(group[i], &groupcomponent[i], &groupcomponentsize[i]);
 		sqi_examine_group(group[groups], &groupcomponent[groups], &groupcomponentsize[groups]);
 		groupsorted[groups] = groupsorted[i];
@@ -537,22 +553,24 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 	*(*pal + 1) = 0;
 	*(*pal + 2) = 0;
 
+	// Build palette
 	for (i = 0; i < groups; i++)
 	{
 		col = group[i];
+		*(*idxmap + col->coloridx) = i;
 		count = comp[0] = comp[1] = comp[2] = 0;
+		// Compute the average color for the group
 		while (col != NULL)
 		{
 			count++;
-			*(*idxmap + col->coloridx) = i + 1;
 			comp[0] += col->data.component[0];
 			comp[1] += col->data.component[1];
 			comp[2] += col->data.component[2];
 			col = col->next;
 		}
-		*(*pal + i * 3 + 3) = comp[0] / count;
-		*(*pal + i * 3 + 4) = comp[1] / count;
-		*(*pal + i * 3 + 5) = comp[2] / count;
+		*(*pal + (i + 1) * 3) = comp[0] / count;
+		*(*pal + (i + 1) * 3) = comp[1] / count;
+		*(*pal + (i + 1) * 3) = comp[2] / count;
 	}
 	col = q->zeromap;
 	while (col != NULL)
