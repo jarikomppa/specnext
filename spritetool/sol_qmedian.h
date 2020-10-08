@@ -12,7 +12,7 @@ In one source file, do this:
 Usage example (combining three palettes):
 
 	SQ *q;
-	int *idxmap;
+	unsigned char *idxmap;
 	int idx[3];
 	unsigned char *my_final_palette;
 	q = sq_alloc();
@@ -29,7 +29,7 @@ Usage example (combining three palettes):
 Usage example (converting 32bpp RGBX image to paletted image):
 
 	SQ *q;
-	int *idxmap;
+	unsigned char *idxmap;
 	int idxmapsize;
 	unsigned char *palette;
 	q = sq_alloc();
@@ -83,7 +83,7 @@ extern int sq_addcolormap(SQ *q, unsigned char *colmap, int colors, int stride);
  * colors of your pictures or whatever..
  * *(idxmap + old_color) == new_color;
  */
-extern int sq_reduce(SQ* q, int** idxmap, unsigned char** pal, int* outcolors, int palwid);
+extern int sq_reduce(SQ* q, unsigned char** idxmap, unsigned char** pal, int* outcolors, int palwid);
 
 #ifdef SOL_QMEDIAN_IMPLEMENTATION
 
@@ -92,8 +92,6 @@ extern int sq_reduce(SQ* q, int** idxmap, unsigned char** pal, int* outcolors, i
 
 // re-sort after quantization
 #define SQI_RE_SORT
-// cut by brightness as well as r,g and b
-//#define SQI_CUT_LIGHTBASE
 // kill duplicates
 #define SQI_DUPENUKE
 
@@ -145,28 +143,6 @@ SQ *sq_alloc(void)
 }
 
 /*
- * local add_zero
- * - add a color to the zero-list (black color)
- */
-void sqi_add_zero(SQ *q, struct sqi_colorstruc *temp)
-{
-	temp->coloridx = q->colors;
-	temp->data.block = -1;
-	temp->next = NULL;
-	if (q->zeromap == NULL)
-	{
-		q->zeromap = temp;
-	}
-	else 
-	{
-		q->zerolast->next = temp;
-	}
-	q->zerolast = temp;
-	q->colors++;
-	q->zeros++;
-}
-
-/*
  * local add_color
  * - add a color to the color list
  */
@@ -177,7 +153,7 @@ void sqi_add_color(SQ *q, struct sqi_colorstruc *temp, int r, int g, int b)
 	temp->data.component[0] = r;
 	temp->data.component[1] = g;
 	temp->data.component[2] = b;
-	temp->data.component[3] = (r * 3 + g * 6 + b) / 10;
+	temp->data.component[3] = 0;
 	if (q->first == NULL) 
 	{
 		q->first = temp;
@@ -214,14 +190,7 @@ int sq_addcolormap(SQ* q, unsigned char* colmap, int colors, int stride)
 	q->lastcolmap = temp;
 	for (a = 0; a < colors; a++)
 	{
-		if ((*(colmap + a * stride + 0) == 0) && (*(colmap + a * stride + 1) == 0) && (*(colmap + a * stride + 2) == 0))
-		{
-			sqi_add_zero(q, temp->col + a);
-		}
-		else
-		{
-			sqi_add_color(q, temp->col + a, *(colmap + a * stride + 0), *(colmap + a * stride + 1), *(colmap + a * stride + 2));
-		}
+		sqi_add_color(q, temp->col + a, *(colmap + a * stride + 0), *(colmap + a * stride + 1), *(colmap + a * stride + 2));
 	}
 	return ret;
 }
@@ -251,11 +220,6 @@ void sqi_free_colmaps(SQ *q)
 void sqi_examine_group(struct sqi_colorstruc *g, int *groupcomponent, int *size)
 {
 	int rmin, rmax, gmin, gmax, bmin, bmax, rs, gs, bs, a, groupsize;
-#ifdef SQI_CUT_LIGHTBASE
-	int lmin, lmax, ls;
-	lmin = lmax = g->data.component[3];
-	ls = 0;
-#endif
 	rmin = rmax = g->data.component[0];
 	gmin = gmax = g->data.component[1];
 	bmin = bmax = g->data.component[2];
@@ -275,12 +239,6 @@ void sqi_examine_group(struct sqi_colorstruc *g, int *groupcomponent, int *size)
 		if (bmin > a) bmin = a;
 		if (bmax < a) bmax = a;
 		bs += a;
-#ifdef SQI_CUT_LIGHTBASE
-		a = g->data.component[3];
-		if (lmin > a) lmin = a;
-		if (lmax < a) lmax = a;
-		ls += a;
-#endif
 		g = g->next;
 	}
 	groupsize = rmax - rmin;
@@ -292,14 +250,6 @@ void sqi_examine_group(struct sqi_colorstruc *g, int *groupcomponent, int *size)
 		*groupcomponent = 1;
 		*size = gs;
 	}
-#ifdef SQI_CUT_LIGHTBASE
-	if ((lmax - lmin) > groupsize)
-	{
-		groupsize = lmax - lmin;
-		*groupcomponent = 3;
-		*size = ls;
-	}
-#endif
 	if ((bmax - bmin) > groupsize)
 	{
 		*groupcomponent = 2;
@@ -399,6 +349,7 @@ void sqi_dupenuke(SQ* q)
 {
 	struct sqi_colorstruc *col, *last;
 	int lastidx, lastcol;
+	// Sort by all dimensions, leaving identical colors next to each other
 	q->first = sqi_sort_group(q->first, 0);
 	q->first = sqi_sort_group(q->first, 1);
 	q->first = sqi_sort_group(q->first, 2);
@@ -409,7 +360,8 @@ void sqi_dupenuke(SQ* q)
 	while (col != NULL) 
 	{
 		if (col->data.block == lastcol) 
-		{ // duplicate
+		{ 
+			// duplicate
 			col->data.block = lastidx; // set datablock to point to real color instead
 			last->next = col->next;    // removed from the list
 			if (q->zeromap == NULL) 
@@ -426,7 +378,8 @@ void sqi_dupenuke(SQ* q)
 			q->zeros++;
 		}
 		else 
-		{ // not dupe
+		{ 
+			// not dupe
 			lastidx = col->coloridx;
 			lastcol = col->data.block;
 		}
@@ -440,20 +393,20 @@ void sqi_dupenuke(SQ* q)
  * - do the quantize, build index map, free all allocated resources.
  *   returns total number of colors in the palette.
  */
-int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int palwid)
+int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindices, int palwid)
 {
 	int i, n, totalcolors, comp[3], count, groups;
 	struct sqi_colorstruc* col;
 	struct sqi_colorstruc** group;
 	int *groupcomponent, *groupcomponentsize, *groupsorted;
 #ifdef SQI_RE_SORT
-	int* remapmap;
+	unsigned char* remapmap;
 	unsigned char* temppal, * tempcp;
 	SQ* reorder;
 #endif
 	totalcolors = q->colors;
 	*pal = (unsigned char *)sqi_calloc(sizeof(char) * palwid * 3);
-	*idxmap = (int *)sqi_calloc(sizeof(int) * totalcolors);
+	*idxmap = (unsigned char *)sqi_calloc(sizeof(unsigned char) * totalcolors);
 	group = (struct sqi_colorstruc **)sqi_calloc(sizeof(struct sqi_colorstruc*) * palwid);
 	groupsorted = (int *)sqi_calloc(sizeof(int) * palwid);
 	groupcomponent = (int *)sqi_calloc(sizeof(int) * palwid);
@@ -461,7 +414,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 #ifdef SQI_DUPENUKE
 	sqi_dupenuke(q);
 #endif
-	if ((q->colors - q->zeros) < palwid) 
+	if ((q->colors - q->zeros) <= palwid) 
 	{
 		palwid = q->colors - q->zeros;
 		if (outindices)
@@ -470,15 +423,13 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 		}
 		/*
 		 * If number of input colors is less than requested output,
-		 * just sort the colors, make sure color 0 is black, and
-		 * so on. Don't do any real reducing, that is.
+		 * just sort the colors and so on. Don't do any real reducing, that is.
 		 */
-		q->first = sqi_sort_group(q->first, 3);
-		i = 1;
-		*(*pal + 0) = 0;
-		*(*pal + 1) = 0;
-		*(*pal + 2) = 0;
+		q->first = sqi_sort_group(q->first, 0);
+		q->first = sqi_sort_group(q->first, 2);
+		q->first = sqi_sort_group(q->first, 1);
 		col = q->first;
+		i = 0;
 		while (col != NULL) 
 		{
 			*(*idxmap + col->coloridx) = i;
@@ -491,14 +442,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 		col = q->zeromap;
 		while (col != NULL) 
 		{
-			if (col->data.block == -1)
-			{
-				*(*idxmap + col->coloridx) = 0;
-			}
-			else
-			{
-				*(*idxmap + col->coloridx) = *(*idxmap + col->data.block);
-			}
+			*(*idxmap + col->coloridx) = *(*idxmap + col->data.block);
 			col = col->next;
 		}
 		free(group);
@@ -518,7 +462,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 #else
 	groupsorted[0] = -1;
 #endif
-	while (groups < (palwid - 1))
+	while (groups < palwid)
 	{
 		// Find largest group (in a dimension, not volume)
 		i = 0;
@@ -549,10 +493,6 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 		groups++;
 	}
 
-	*(*pal + 0) = 0;
-	*(*pal + 1) = 0;
-	*(*pal + 2) = 0;
-
 	// Build palette
 	for (i = 0; i < groups; i++)
 	{
@@ -568,21 +508,14 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 			comp[2] += col->data.component[2];
 			col = col->next;
 		}
-		*(*pal + (i + 1) * 3) = comp[0] / count;
-		*(*pal + (i + 1) * 3) = comp[1] / count;
-		*(*pal + (i + 1) * 3) = comp[2] / count;
+		*(*pal + (i) * 3 + 0) = comp[0] / count;
+		*(*pal + (i) * 3 + 1) = comp[1] / count;
+		*(*pal + (i) * 3 + 2) = comp[2] / count;
 	}
 	col = q->zeromap;
 	while (col != NULL)
 	{
-		if (col->data.block == -1)
-		{
-			*(*idxmap + col->coloridx) = 0;
-		}
-		else
-		{
-			*(*idxmap + col->coloridx) = *(*idxmap + col->data.block);
-		}
+		*(*idxmap + col->coloridx) = *(*idxmap + col->data.block);
 		col = col->next;
 	}
 	free(group);
@@ -597,7 +530,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 #ifdef SQI_RE_SORT
 	reorder = sq_alloc();
 	sq_addcolormap(reorder, *pal, palwid, 3);
-	sq_reduce(reorder, &remapmap, &temppal, NULL, palwid);
+	palwid = sq_reduce(reorder, &remapmap, &temppal, NULL, palwid);
 	SQI_SWAP(*pal, temppal, tempcp);
 	free(temppal);
 	for (i = 0; i < totalcolors; i++)

@@ -31,15 +31,28 @@ int main(int parc, char** pars)
 
 	// Reduce color space to 3 bits (8 levels) each
 	for (int i = 0; i < x * y * 4; i++)
-		data[i] &= 0xe0;
+		data[i] >>= 5;
 
+	int colors[512];
+	for (int i = 0; i < 512; i++)
+		colors[i] = 0;
+	for (int i = 0; i < x * y; i++)
+		colors[(data[i * 4 + 0]) | (data[i * 4 + 1] << 3) | (data[i * 4 + 2] << 6)] = 1;
+	int colorcount = 0;
+	for (int i = 0; i < 512; i++)
+		if (colors[i])
+			colorcount++;
+
+	printf("Found %d unique colors\n", colorcount);
 	SQ* q;
-	int* idxmap;
+	unsigned char* idxmap;
 	unsigned char* palette;
 	q = sq_alloc();
 	sq_addcolormap(q, data, x * y, 4);
 	int count =	sq_reduce(q, &idxmap, &palette, NULL, 256);
 	free(idxmap);
+	for (int i = 0; i < count * 3; i++) { printf(" %02x", palette[i]); if (i % 3 == 2) printf("\n"); }
+	printf("\n");
 	free(palette);
 	printf("%d total colors\n", count);
 
