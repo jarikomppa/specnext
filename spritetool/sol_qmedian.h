@@ -9,21 +9,35 @@ In one source file, do this:
 	#define SOL_QMEDIAN_IMPLEMENTATION
 	#include "sol_qmedian.h"
 
-Usage example:
+Usage example (combining three palettes):
 
 	SQ *q;
 	int *idxmap;
 	int idx[3];
 	unsigned char *my_final_palette;
 	q = sq_alloc();
-	idx[0] = sq_addcolormap3(q, my_palette, 256);
-	idx[1] = sq_addcolormap3(q, my_other_palette, 256);
-	idx[2] = sq_addcolormap3(q, my_yet_another_palette, 256);
+	idx[0] = sq_addcolormap(q, my_palette, 256, 3);
+	idx[1] = sq_addcolormap(q, my_other_palette, 256, 3);
+	idx[2] = sq_addcolormap(q, my_yet_another_palette, 256, 3);
 	sq_reduce(q, &idxmap, &my_final_palette, NULL, 256);
 	final_palette_index = *(idxmap + idx[1] + old_color_index_in_my_other_palette);
 	free(idxmap);
 	free(my_final_palette);
-*/
+
+Usage example (converting 32bpp RGBX image to paletted image):
+
+	SQ *q;
+	int *idxmap;
+	int idxmapsize;
+	unsigned char *palette;
+	q = sq_alloc();
+	sq_addcolormap(q, data, x * y, 4);
+	sq_reduce(q, &idxmap, &palette, &idxmapsize, 256);
+	... idxmap is now paletted image (with idxmapsize bytes), palette is 768 byte palette
+	free(idxmap);
+	free(palette);
+
+	*/
 
 #ifndef SOL_QMEDIAN_H
 #define SOL_QMEDIAN_H
@@ -49,14 +63,14 @@ typedef struct sq_quantstruc
 /* Use sq_alloc to allocate a new quantize base. */
 extern SQ* sq_alloc();
 
-/* Add colormaps with qaddcolormap. Input should be an array with
- * 3 bytes per color or 4 bytes per color, where the fourth byte is ignored.
+/* Add colormaps with qaddcolormap. Stride, typically 3 or 4,
+ * states how many bytes per each color. If stride is 4, the
+ * 4th byte is ignored.
  * This function returns the index to the idxmap where this
  * currently added colormap will start.
- * This call do not free the colmaps.
+ * This call does not free the colmaps.
  */
-extern int sq_addcolormap3(SQ *q, unsigned char *colmap, int colors);
-extern int sq_addcolormap4(SQ* q, unsigned char* colmap, int colors);
+extern int sq_addcolormap(SQ *q, unsigned char *colmap, int colors, int stride);
 
 /* This will reduce the colors to palwid. It will allocate memory
  * for idxmap and pal, and will free everything that has to do
@@ -172,47 +186,11 @@ void sqi_add_color(SQ *q, struct sqi_colorstruc *temp, int r, int g, int b)
 }
 
 /*
- * public sq_addcolormap3
+ * public sq_addcolormap
  * - add a color map to be quantized
  *   returns index to the idxmap (see qreduce)
  */
-int sq_addcolormap3(SQ *q, unsigned char *colmap, int colors)
-{
-	int a, ret;
-	struct sqi_colormapstruc* temp;
-	ret = q->colors;
-	temp = (struct sqi_colormapstruc *)sqi_calloc(sizeof(struct sqi_colormapstruc));
-	temp->col = (struct sqi_colorstruc *)sqi_calloc(sizeof(struct sqi_colorstruc) * colors);
-	temp->next = NULL;
-	if (q->colmap == NULL) 
-	{
-		q->colmap = temp;
-	}
-	else 
-	{
-		q->lastcolmap->next = temp;
-	}
-	q->lastcolmap = temp;
-	for (a = 0; a < colors; a++) 
-	{
-		if ((*(colmap + a * 3 + 0) == 0) && (*(colmap + a * 3 + 1) == 0) && (*(colmap + a * 3 + 2) == 0)) 
-		{
-			sqi_add_zero(q, temp->col + a);
-		}
-		else 
-		{
-			sqi_add_color(q, temp->col + a, *(colmap + a * 3 + 0), *(colmap + a * 3 + 1), *(colmap + a * 3 + 2));
-		}
-	}
-	return ret;
-}
-
-/*
- * public sq_addcolormap4
- * - add a color map to be quantized
- *   returns index to the idxmap (see qreduce)
- */
-int sq_addcolormap4(SQ* q, unsigned char* colmap, int colors)
+int sq_addcolormap(SQ* q, unsigned char* colmap, int colors, int stride)
 {
 	int a, ret;
 	struct sqi_colormapstruc* temp;
@@ -231,13 +209,13 @@ int sq_addcolormap4(SQ* q, unsigned char* colmap, int colors)
 	q->lastcolmap = temp;
 	for (a = 0; a < colors; a++)
 	{
-		if ((*(colmap + a * 4 + 0) == 0) && (*(colmap + a * 4 + 1) == 0) && (*(colmap + a * 4 + 2) == 0))
+		if ((*(colmap + a * stride + 0) == 0) && (*(colmap + a * stride + 1) == 0) && (*(colmap + a * stride + 2) == 0))
 		{
 			sqi_add_zero(q, temp->col + a);
 		}
 		else
 		{
-			sqi_add_color(q, temp->col + a, *(colmap + a * 4 + 0), *(colmap + a * 4 + 1), *(colmap + a * 4 + 2));
+			sqi_add_color(q, temp->col + a, *(colmap + a * stride + 0), *(colmap + a * stride + 1), *(colmap + a * stride + 2));
 		}
 	}
 	return ret;
@@ -600,7 +578,7 @@ int sq_reduce(SQ *q, int **idxmap, unsigned char **pal, int *outindices, int pal
 	free(q);
 #ifdef SQI_RE_SORT
 	reorder = sq_alloc();
-	sq_addcolormap3(reorder, *pal, palwid);
+	sq_addcolormap(reorder, *pal, palwid, 3);
 	sq_reduce(reorder, &remapmap, &temppal, NULL, palwid);
 	SQI_SWAP(*pal, temppal, tempcp);
 	free(temppal);

@@ -35,10 +35,9 @@ int main(int parc, char** pars)
 
 	SQ* q;
 	int* idxmap;
-	int idx;
 	unsigned char* palette;
 	q = sq_alloc();
-	idx = sq_addcolormap4(q, data, x * y);
+	sq_addcolormap(q, data, x * y, 4);
 	int count =	sq_reduce(q, &idxmap, &palette, NULL, 256);
 	free(idxmap);
 	free(palette);
