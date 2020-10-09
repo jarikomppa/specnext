@@ -530,6 +530,7 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 		col = col->next;
 	}
 	free(group);
+	free(groupsorted);
 	free(groupcomponent);
 	free(groupcomponentsize);
 	free(groupcomponentsum);
