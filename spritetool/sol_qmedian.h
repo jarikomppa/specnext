@@ -217,43 +217,43 @@ void sqi_free_colmaps(SQ *q)
  * - Find out the largest component in sub-colorspace and return it and
  *   its size.
  */
-void sqi_examine_group(struct sqi_colorstruc *g, int *groupcomponent, int *size)
+void sqi_examine_group(struct sqi_colorstruc *g, int *component, int *size, int *sum)
 {
-	int rmin, rmax, gmin, gmax, bmin, bmax, rs, gs, bs, a, groupsize;
-	rmin = rmax = g->data.component[0];
-	gmin = gmax = g->data.component[1];
-	bmin = bmax = g->data.component[2];
-	rs = gs = bs = 0;
+	int rmin, rmax, gmin, gmax, bmin, bmax, rs, gs, bs, v;
+	rs = rmin = rmax = g->data.component[0];
+	gs = gmin = gmax = g->data.component[1];
+	bs = bmin = bmax = g->data.component[2];
 	g = g->next;
 	while (g != NULL)
 	{
-		a = g->data.component[0];
-		if (rmin > a) rmin = a;
-		if (rmax < a) rmax = a;
-		rs += a;
-		a = g->data.component[1];
-		if (gmin > a) gmin = a;
-		if (gmax < a) gmax = a;
-		gs += a;
-		a = g->data.component[2];
-		if (bmin > a) bmin = a;
-		if (bmax < a) bmax = a;
-		bs += a;
+		v = g->data.component[0];
+		rs += v;
+		if (rmin > v) rmin = v;
+		if (rmax < v) rmax = v;
+		v = g->data.component[1];
+		gs += v;
+		if (gmin > v) gmin = v;
+		if (gmax < v) gmax = v;
+		v = g->data.component[2];
+		bs += v;
+		if (bmin > v) bmin = v;
+		if (bmax < v) bmax = v;
 		g = g->next;
 	}
-	groupsize = rmax - rmin;
-	*groupcomponent = 0;
-	*size = rs;
-	if ((gmax - gmin) > groupsize)
+	*size = rmax - rmin;
+	*component = 0;
+	*sum = rs;
+	if ((gmax - gmin) > *size)
 	{
-		groupsize = gmax - gmin;
-		*groupcomponent = 1;
-		*size = gs;
+		*size = gmax - gmin;
+		*component = 1;
+		*sum = gs;
 	}
-	if ((bmax - bmin) > groupsize)
+	if ((bmax - bmin) > *size)
 	{
-		*groupcomponent = 2;
-		*size = bs;
+		*size = bmax - bmin;
+		*component = 2;
+		*sum = bs;
 	}
 }
 
@@ -268,7 +268,7 @@ struct sqi_colorstruc* sqi_cut_group(struct sqi_colorstruc *g, int component, in
 	struct sqi_colorstruc *second = NULL, *fore = NULL;
 	median = max / 2;
 	count = 0;
-	while (count < median) 
+	while (count <= median) 
 	{
 		count += g->data.component[component];
 		fore = second;
@@ -398,7 +398,7 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 	int i, n, totalcolors, comp[3], count, groups;
 	struct sqi_colorstruc* col;
 	struct sqi_colorstruc** group;
-	int *groupcomponent, *groupcomponentsize, *groupsorted;
+	int *groupcomponent, *groupcomponentsize, *groupcomponentsum, *groupsorted;
 #ifdef SQI_RE_SORT
 	unsigned char* remapmap;
 	unsigned char* temppal, * tempcp;
@@ -411,6 +411,7 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 	groupsorted = (int *)sqi_calloc(sizeof(int) * palwid);
 	groupcomponent = (int *)sqi_calloc(sizeof(int) * palwid);
 	groupcomponentsize = (int *)sqi_calloc(sizeof(int) * palwid);
+	groupcomponentsum = (int *)sqi_calloc(sizeof(int) * palwid);
 #ifdef SQI_DUPENUKE
 	sqi_dupenuke(q);
 #endif
@@ -449,6 +450,7 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 		free(groupsorted);
 		free(groupcomponent);
 		free(groupcomponentsize);
+		free(groupcomponentsum);
 		sqi_free_colmaps(q);
 		free(q);
 		return palwid;
@@ -456,12 +458,8 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 	// Set up, analyze initial group (i.e, all incoming colors)
 	groups = 1;
 	group[0] = q->first;
-	sqi_examine_group(group[0], &groupcomponent[0], &groupcomponentsize[0]);
-#ifdef SQI_DUPENUKE
-	groupsorted[0] = 2;
-#else
+	sqi_examine_group(group[0], &groupcomponent[0], &groupcomponentsize[0], &groupcomponentsum[0]);
 	groupsorted[0] = -1;
-#endif
 	while (groups < palwid)
 	{
 		// Find largest group (in a dimension, not volume)
@@ -480,15 +478,15 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 			groupsorted[i] = groupcomponent[i];
 		}
 		// Cut the group in half at median point
-		group[groups] = sqi_cut_group(group[i], groupcomponent[i], groupcomponentsize[i]);
+		group[groups] = sqi_cut_group(group[i], groupcomponent[i], groupcomponentsum[i]);
 		// If we can't cut, we're done
 		if (group[groups] == NULL)
 		{
 			break;
 		}
 		// Analyze, store, increment, continue.
-		sqi_examine_group(group[i], &groupcomponent[i], &groupcomponentsize[i]);
-		sqi_examine_group(group[groups], &groupcomponent[groups], &groupcomponentsize[groups]);
+		sqi_examine_group(group[i], &groupcomponent[i], &groupcomponentsize[i], &groupcomponentsum[i]);
+		sqi_examine_group(group[groups], &groupcomponent[groups], &groupcomponentsize[groups], &groupcomponentsum[groups]);
 		groupsorted[groups] = groupsorted[i];
 		groups++;
 	}
@@ -508,9 +506,22 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 			comp[2] += col->data.component[2];
 			col = col->next;
 		}
-		*(*pal + (i) * 3 + 0) = comp[0] / count;
-		*(*pal + (i) * 3 + 1) = comp[1] / count;
-		*(*pal + (i) * 3 + 2) = comp[2] / count;
+		if (groupcomponentsize[i] > 1)
+		{ 
+			// Average the colors in the group
+			*(*pal + (i) * 3 + 0) = (comp[0] + count / 2) / count;
+			*(*pal + (i) * 3 + 1) = (comp[1] + count / 2) / count;
+			*(*pal + (i) * 3 + 2) = (comp[2] + count / 2) / count;
+		}
+		else
+		{ 
+			// in case the group is small, averaging may lead into
+			// duplicate colors in tiny color spaces; using one
+			// of the original colors is "good enough"
+			*(*pal + (i) * 3 + 0) = group[i]->data.component[0];
+			*(*pal + (i) * 3 + 1) = group[i]->data.component[1];
+			*(*pal + (i) * 3 + 2) = group[i]->data.component[2];
+		}
 	}
 	col = q->zeromap;
 	while (col != NULL)
@@ -521,6 +532,7 @@ int sq_reduce(SQ *q, unsigned char **idxmap, unsigned char **pal, int *outindice
 	free(group);
 	free(groupcomponent);
 	free(groupcomponentsize);
+	free(groupcomponentsum);
 	if (outindices)
 	{
 		*outindices = totalcolors;
