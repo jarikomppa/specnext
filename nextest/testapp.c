@@ -1,12 +1,12 @@
 /*
  * Part of Jari Komppa's zx spectrum suite 
- * https://github.com/jarikomppa/speccy 
+ * https://github.com/jarikomppa/specnext
  * released under the unlicense, see http://unlicense.org 
  * (practically public domain) 
  */
 
 #define HWIF_IMPLEMENTATION
-#include "hwif.c"
+#include "../common/hwif.c"
 
 
 extern unsigned char fopen(unsigned char *fn, unsigned char mode);

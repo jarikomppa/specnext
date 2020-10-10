@@ -1,12 +1,19 @@
-#define _CRT_SECURE_NO_WARNINGS
+/*
+ * Part of Jari Komppa's zx spectrum next suite 
+ * https://github.com/jarikomppa/specnext
+ * released under the unlicense, see http://unlicense.org 
+ * (practically public domain) 
+ */
+
+ #define _CRT_SECURE_NO_WARNINGS
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "../common/stb_image.h"
 #define SOL_QMEDIAN_IMPLEMENTATION
-#include "sol_qmedian.h"
+#include "../common/sol_qmedian.h"
 
 int main(int parc, char** pars)
 {

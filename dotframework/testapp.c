@@ -1,9 +1,12 @@
-/* * Part of Jari Komppa's zx spectrum suite * 
-https://github.com/jarikomppa/speccy * released under the unlicense, see 
-http://unlicense.org * (practically public domain) */
+/*
+ * Part of Jari Komppa's zx spectrum next suite 
+ * https://github.com/jarikomppa/specnext
+ * released under the unlicense, see http://unlicense.org 
+ * (practically public domain) 
+ */
 
 #define HWIF_IMPLEMENTATION
-#include "hwif.c"
+#include "../common/hwif.c"
 
 #include "yofstab.h"
 const unsigned char propfont[] = {

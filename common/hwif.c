@@ -1,9 +1,9 @@
 /*
- * Part of Jari Komppa's zx specnext suite
- * https://github.com/jarikomppa/speccy
+ * Part of Jari Komppa's zx spectrum next suite 
+ * https://github.com/jarikomppa/specnext
  * released under the unlicense, see http://unlicense.org 
- * (practically public domain)
-*/
+ * (practically public domain) 
+ */
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
