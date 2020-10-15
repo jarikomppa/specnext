@@ -3,10 +3,11 @@
 	.globl _fclose
 	.globl _fread
 	.globl _fwrite
-	.globl _writenextreg
-	.globl _readnextreg
+	.globl _fseek
 	.globl _allocpage
 	.globl _freepage
+	.globl _makepath
+	.globl _conprint
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -27,6 +28,7 @@ _fopen::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	l,  4 (ix) ; fn
 	ld	h,  5 (ix)
 	ld  b,  6 (ix) ; mode
@@ -42,6 +44,7 @@ openfail:
 
 ;extern void fclose(unsigned char handle);
 _fclose::
+    ld iy, (_osiy)
 	ld	hl, #2+0
 	add	hl, sp
 	ld	a, (hl) ; handle
@@ -54,6 +57,7 @@ _fread::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	a,  4 (ix) ; handle
 	ld	l,  7 (ix) ; bytes
 	ld	h,  8 (ix)
@@ -73,6 +77,7 @@ _fwrite::
 	push	ix
 	ld	ix, #0
 	add	ix, sp
+    ld iy, (_osiy)
 	ld	a,  4 (ix) ; handle
 	ld	l,  7 (ix) ; bytes
 	ld	h,  8 (ix)
@@ -85,56 +90,28 @@ _fwrite::
 	pop	ix
 	ret
 
-;extern void writenextreg(unsigned char reg, unsigned char val);
-_writenextreg::
+;extern void fseek(unsigned char handle, unsigned long ofs);
+_fseek::
 	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    hl
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-	ld      l,      5 (ix) ; val
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-	ld      a,      l
-    out     (c),    a
-    pop     bc    
-
-    pop af
-    pop hl
-	pop ix
-    ret
-
-
-;extern unsigned char readnextreg(unsigned char reg);
-_readnextreg::
-	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-    in      a,      (c)
-    ld      l,      a
-    pop     bc    
-
-    pop af
-	pop ix
-    ret
+	ld	ix, #0
+	add	ix, sp
+    ld iy, (_osiy)
+	ld	a,  4 (ix) ; handle
+	ld	c,  7 (ix) ; offset BCDE
+	ld	b,  8 (ix)
+	ld	e,  5 (ix)
+	ld	d,  6 (ix)
+	ld  hl, #0     ; just seek_set (for now)
+    rst     #0x8
+    .db     #0x9d
+	pop	ix
+	ret
 
 ; Note: most likely requires most of the normal banks to be mapped to work
 
 ;extern unsigned char allocpage()
 _allocpage::
+    ld iy, (_osiy)
     ld      hl, #0x0001 ; alloc zx memory
     exx                             ; place parameters in alternates
     ld      de, #0x01bd             ; IDE_BANK
@@ -149,6 +126,7 @@ allocfail:
 
 ;extern void freepage(unsigned char page)
 _freepage::
+    ld iy, (_osiy)
 	ld	    hl, #2+0
 	add	    hl, sp
 	ld	    e, (hl)  ; page
@@ -159,4 +137,32 @@ _freepage::
     rst     #0x8
     .db     #0x94                   ; +3dos call
 	ret
-	
+
+; extern void makepath(char *pathspec); // must be 0xff terminated!
+_makepath::
+    pop de  ; return address
+    pop hl  ; char *pathspec
+    push hl ; restore stack
+    push de
+    ld iy, (_osiy)
+   
+    ld a, #0x02 ; make path
+    exx                             ; place parameters in alternates
+    ld      de, #0x01b1             ; IDE_PATH
+    ld      c, #7                   ; "usually 7, but 0 for some calls"
+    rst     #0x8
+    .db     #0x94                   ; +3dos call
+
+	ret
+    
+
+;extern void conprint(char *txt) __z88dk_fastcall;
+_conprint:
+    ld iy, (_osiy)
+    ld a, (hl)
+    and a, a
+    ret z
+    rst 16
+    inc hl
+    jp _conprint
+_endof_esxdos:	

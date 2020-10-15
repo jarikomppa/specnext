@@ -5,12 +5,14 @@
 		.module crt0
 		.globl _heap
 		.globl _cmdline
+		.globl _osiy
 
 		.area _HEADER(ABS)
 	
 		di				; no rom anymore
 
         ld (_cmdline),hl 
+        ld (_osiy), iy
 		ld (#store_sp),sp		; store SP
 		ld sp,#16384
 
@@ -53,6 +55,7 @@
 		ret	
 store_sp:	.word 252
 _cmdline:   .word 0
+_osiy: .word 0
 
 		;;	(linker documentation:) where specific ordering is desired - 
 		;;	the first linker input file should have the area definitions 

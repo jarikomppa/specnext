@@ -18,9 +18,10 @@ extern unsigned char fopen(unsigned char *fn, unsigned char mode);
 extern void fclose(unsigned char handle);
 extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
+extern void fseek(unsigned char handle, unsigned long ofs);
+extern void makepath(char *pathspec); // must be 0xff terminated!
+extern void conprint(char *txt) __z88dk_fastcall;
 
-extern void writenextreg(unsigned char reg, unsigned char val);
-extern unsigned char readnextreg(unsigned char reg);
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
 
@@ -35,6 +36,15 @@ extern void ei();
 
 extern unsigned short framecounter;
 extern char *cmdline;
+
+unsigned char readnextreg(char reg)
+{
+    PORT_NEXTREG_SELECT = reg;
+    return PORT_NEXTREG_IO;
+}
+
+#define writenextreg(REG, VAL) { PORT_NEXTREG_SELECT = (REG); PORT_NEXTREG_IO = (VAL); }
+
 
 void printnum(unsigned char v, unsigned char x, unsigned char y)
 {
