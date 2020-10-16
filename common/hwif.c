@@ -313,9 +313,11 @@ enum KEYS
 #ifndef HWIF_IMPLEMENTATION
 
 extern unsigned char keydata[];
-extern void do_halt();
 extern void port254(const unsigned char color) __z88dk_fastcall;
 extern void readkeyboard();
+extern void ei();
+extern void di();
+extern void halt();
 
 #else
 
@@ -348,21 +350,24 @@ void port254(const unsigned char color) __z88dk_fastcall
     do_port254(color);
 }
 
-// practically waits for retrace
-void do_halt()
+void halt()
 {
     __asm
-        ei
         halt
-        di
     __endasm;
 }
 
-void do_freeze()
+void ei()
+{
+    __asm
+        ei
+    __endasm;
+}
+
+void di()
 {
     __asm
         di
-        halt
     __endasm;
 }
 
