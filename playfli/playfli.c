@@ -19,6 +19,42 @@ extern void conprint(char *txt) __z88dk_fastcall;
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
 
+extern void memcpy(char *dest, const char *source, unsigned short count);
+extern void memset(char *dest, const short value, unsigned short count);
+
+void dma_memcpy(char *dest, const char *source, unsigned short count)
+{   
+    if (count < 20)
+    {
+        memcpy(dest, source, count);
+        return;
+    }
+    PORT_DATAGEAR_DMA = 0x83; // DMA_DISABLE
+    PORT_DATAGEAR_DMA = 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
+    PORT_DATAGEAR_DMA = (unsigned short)source & 0xff;
+    PORT_DATAGEAR_DMA = ((unsigned short)source >> 8) & 0xff;
+    PORT_DATAGEAR_DMA = count & 0xff;
+    PORT_DATAGEAR_DMA = (count >> 8) & 0xff;
+    PORT_DATAGEAR_DMA = 0b01010100; // R1-write A time byte, increment, to memory, bitmask
+    PORT_DATAGEAR_DMA = 0b00000010; // 2t
+    PORT_DATAGEAR_DMA = 0b01010000; // R2-write B time byte, increment, to memory, bitmask
+    PORT_DATAGEAR_DMA = 0b00000010; // R2-Cycle length port B
+    PORT_DATAGEAR_DMA = 0b10101101; // R4-Continuous mode (use this for block transfer), write dest adress
+    PORT_DATAGEAR_DMA = (unsigned short)dest & 0xff;
+    PORT_DATAGEAR_DMA = ((unsigned short)dest >> 8) & 0xff;
+    PORT_DATAGEAR_DMA = 0b10000010; // R5-Restart on end of block, RDY active LOW
+    PORT_DATAGEAR_DMA = 0b11001111; // R6-Load
+    PORT_DATAGEAR_DMA = 0x87;       // R6-Enable DMA
+
+}
+
+void dma_memset(char *dest, const short value, unsigned short count)
+{
+    if (!count) return;
+    *dest = value;
+    dma_memcpy(dest+1, dest, count-1);
+}
+
 extern char *cmdline;
 
 unsigned char readnextreg(char reg)
@@ -83,6 +119,7 @@ void main()
     FLIHEADER hdr; 
     FLIFRAMEHEADER framehdr;
     FLICHUNKHEADER chunkhdr;
+    unsigned short frames;
     char nextreg7, mmu3, mmu6, mmu7, mmu6p, mmu7p;
     char f;
     nextreg7 = readnextreg(0x07);
@@ -96,6 +133,7 @@ void main()
     writenextreg(NEXTREG_MMU7, mmu7p);
 
     f = fopen("/testfli/ba.flc", 1); // open existing for read
+    //f = fopen("/testfli/cube.flc", 1); // open existing for read
     if (f == 0)
     {
         conprint("Can't open file\r");
@@ -133,10 +171,24 @@ void main()
     PORT_NEXTREG_IO = 0xff; // ulanext color mask
     
     writenextreg(NEXTREG_ULA_CONTROL, 0x80); // disable ULA
-    
-    while(hdr.mFliFrames)
+
+    { // cls
+        short int numlines;
+        unsigned char *vbuffptr;
+                
+        for (numlines = 0; numlines < 192; numlines++)
+        {
+            writenextreg(NEXTREG_MMU3, 18 + (numlines >> 5)); // one 8k bank eats 32 scanlines
+            vbuffptr = fb + ((numlines & 31) << 8);
+            memset(vbuffptr, 0, 256);
+        }
+    }
+
+loopanim:    
+    frames = hdr.mFliFrames;
+    while (frames)
     {
-        hdr.mFliFrames--;
+        frames--;
         fread(f, (unsigned char*)&framehdr, sizeof(framehdr));
         if (framehdr.mMagic == 0xf1fa)
         {
@@ -272,7 +324,7 @@ void main()
                         short int numlines;
                         unsigned char *vbuffptr;
                         unsigned char pktcount, numpkt;
-                        signed short sizecount;
+                        //signed short sizecount;
                         signed char size;
                         unsigned char *data;
                         fread(f, scratch, chunkhdr.mSize);
@@ -291,20 +343,14 @@ void main()
                                 data++;
                                 if (size >= 0)
                                 {
-                                    for (sizecount = 0; sizecount < size; sizecount++) 
-                                    {
-                                        *vbuffptr = *data;
-                                        vbuffptr++;
-                                    }
+                                    dma_memset(vbuffptr, *data, size);
+                                    vbuffptr += size;
                                     data++;
                                 } else {
                                     size = -size;
-                                    for (sizecount = 0; sizecount < size; sizecount++)
-                                    {
-                                        *vbuffptr = *data;
-                                        vbuffptr++;
-                                        data++;
-                                    }
+                                    dma_memcpy(vbuffptr, data, size);
+                                    data += size;
+                                    vbuffptr += size;
                                 }
                             }
                         }
@@ -322,7 +368,7 @@ void main()
                         unsigned char *vbuffptr;
                         short int linecount;
                         unsigned char pktcount, skip, numpkt, databyte;
-                        signed short sizecount;
+                        //signed short sizecount;
                         signed char size;
                         unsigned char *data;
                         fread(f, scratch, chunkhdr.mSize);
@@ -349,21 +395,16 @@ void main()
                                 data++;
                                 if (size >= 0) 
                                 {
-                                    for (sizecount = 0; sizecount < size; sizecount++) 
-                                    {
-                                        *vbuffptr = *data;
-                                        vbuffptr++;
-                                        data++;
-                                    }
+                                    dma_memcpy(vbuffptr, data, size);
+                                    vbuffptr += size;
+                                    data += size;
                                 } else {
                                     size = -size;
                                     databyte = *data;
                                     data++;
-                                    for (sizecount = 0; sizecount < size; sizecount++)
-                                    {
-                                        *vbuffptr = databyte;
-                                        vbuffptr++;
-                                    }
+                                    if (size > 0)
+                                    dma_memset(vbuffptr, databyte, size);
+                                    vbuffptr += size;
                                 }
                             }
                         }
@@ -401,6 +442,9 @@ void main()
             }
         }
     }
+    fseek(f, hdr.mOframe2);
+    if (hdr.mOframe2)
+        goto loopanim;
 
     conprint("That's all\r");
 cleanup:    

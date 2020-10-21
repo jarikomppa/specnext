@@ -97,13 +97,17 @@ _fseek::
 	add	ix, sp
     ld iy, (_osiy)
 	ld	a,  4 (ix) ; handle
-	ld	c,  7 (ix) ; offset BCDE
-	ld	b,  8 (ix)
-	ld	e,  5 (ix)
-	ld	d,  6 (ix)
+	ld	b,  6 (ix) ; offset BCDE 
+	ld	c,  5 (ix) ; crash = 8765 7856
+	ld	d,  8 (ix) ; nop = 5678 6587
+	ld	e,  7 (ix)
+	; l = seek mode
+	; 0 = seek_set
+	; 1 = seek_fwd
+	; 2 = seek_bwd
 	ld  hl, #0     ; just seek_set (for now)
     rst     #0x8
-    .db     #0x9d
+    .db     #0x9f
 	pop	ix
 	ret
 

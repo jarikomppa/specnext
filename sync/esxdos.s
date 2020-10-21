@@ -3,8 +3,7 @@
 	.globl _fclose
 	.globl _fread
 	.globl _fwrite
-	.globl _writenextreg
-	.globl _readnextreg
+	.globl _fseek
 	.globl _allocpage
 	.globl _freepage
 	.globl _makepath
@@ -91,51 +90,22 @@ _fwrite::
 	pop	ix
 	ret
 
-;extern void writenextreg(unsigned char reg, unsigned char val);
-_writenextreg::
+;extern void fseek(unsigned char handle, unsigned long ofs);
+_fseek::
 	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    hl
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-	ld      l,      5 (ix) ; val
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-	ld      a,      l
-    out     (c),    a
-    pop     bc    
-
-    pop af
-    pop hl
-	pop ix
-    ret
-
-
-;extern unsigned char readnextreg(unsigned char reg);
-_readnextreg::
-	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-    in      a,      (c)
-    ld      l,      a
-    pop     bc    
-
-    pop af
-	pop ix
-    ret
+	ld	ix, #0
+	add	ix, sp
+    ld iy, (_osiy)
+	ld	a,  4 (ix) ; handle
+	ld	c,  7 (ix) ; offset BCDE
+	ld	b,  8 (ix)
+	ld	e,  5 (ix)
+	ld	d,  6 (ix)
+	ld  hl, #0     ; just seek_set (for now)
+    rst     #0x8
+    .db     #0x9d
+	pop	ix
+	ret
 
 ; Note: most likely requires most of the normal banks to be mapped to work
 

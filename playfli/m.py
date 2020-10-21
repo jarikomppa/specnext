@@ -33,6 +33,7 @@ assert sys.version_info >= (3, 0)
 src = [
     "+cls",
 	"crt0.s",
+    "../common/std.s",	
 	"esxdos.s",
 	"playfli.c"
 	]
@@ -53,6 +54,7 @@ product = [
 # file. %TARGETSUFFIX for lists of target files - so if you generate
 # .obj files, %OBJ has list of all object files from src list.
 methods = {
+#	"c" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdcc -c -o %DSTFILE %SRCFILE -mz80 --no-std-crt0 --opt-code-speed --Werror --peep-asm --peep-return  --max-allocs-per-node200000" ],
 	"c" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdcc -c -o %DSTFILE %SRCFILE -mz80 --no-std-crt0 --opt-code-speed --Werror --peep-asm --peep-return " ],
 	"s" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdasz80 -xlos -g %DSTFILE %SRCFILE" ],
 	"ihx" : [ "ihx", "\\speccy\\cc\\sdcc400\\bin\\sdcc -mz80 --no-std-crt0 --opt-code-speed --nostdlib --code-loc 0x2100 -Wl -b_HEADER=0x2000 %REL"],

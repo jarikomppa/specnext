@@ -31,11 +31,26 @@ _memcpy::
 	push	bc
 	push	hl
 	push	de
-	ld	a,b
-	or	c
-	jr	Z, empty_memcpy	
 	ldir
-empty_memcpy:
+	jp	(iy)
+
+
+; extern void memset(char *dest, const short value, unsigned short count)
+_memset::
+	pop	iy	; return
+	pop	de	; destination
+	pop	hl	; color
+	pop	bc	; count
+	push	bc
+	push	hl
+	push	de
+	ld a, l
+	ld h, d
+	ld l, e
+	ld (hl), a
+	inc de
+	dec bc
+	ldir
 	jp	(iy)
 
 _endof_std:
