@@ -58,7 +58,8 @@ methods = {
 #	"c" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdcc -c -o %DSTFILE %SRCFILE -mz80 --no-std-crt0 --opt-code-speed --Werror --peep-asm --peep-return  --max-allocs-per-node200000" ],
 	"c" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdcc -c -o %DSTFILE %SRCFILE -mz80 --no-std-crt0 --opt-code-speed --Werror --peep-asm --peep-return " ],
 	"s" : [ "rel", "\\speccy\\cc\\sdcc400\\bin\\sdasz80 -xlos -g %DSTFILE %SRCFILE" ],
-	"ihx" : [ "ihx", "\\speccy\\cc\\sdcc400\\bin\\sdcc -mz80 --no-std-crt0 --opt-code-speed --nostdlib --code-loc 0x2100 -Wl -b_HEADER=0x2000 %REL"],
+#	"ihx" : [ "ihx", "\\speccy\\cc\\sdcc400\\bin\\sdcc -mz80 --no-std-crt0 --opt-code-speed --nostdlib --code-loc 0x2100 -Wl -b_HEADER=0x2000 %REL"],
+	"ihx" : [ "ihx", "\\speccy\\cc\\sdcc400\\bin\\sdcc -mz80 --no-std-crt0 --opt-code-speed --nostdlib --code-loc 0x4100 -Wl -b_HEADER=0x4000 %REL"],
 	"tap" : [ "tap", "\\speccy\\tools\\mackarel crt0.ihx %DSTFILE Engarde loader.scr -nosprestore -noei"],
 	"dot" : [ "dot", "..\\tools\\ihx2bin crt0.ihx %DSTFILE"]
 	}

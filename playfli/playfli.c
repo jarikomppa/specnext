@@ -38,6 +38,7 @@ void dma_memcpy(char *dest, const char *source, unsigned short count)
         memcpy(dest, source, count);
         return;
     }
+    if (count > 256) return;
     PORT_DATAGEAR_DMA = 0x83; // DMA_DISABLE
     PORT_DATAGEAR_DMA = 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
     PORT_DATAGEAR_DMA = (unsigned short)source & 0xff;
@@ -114,8 +115,8 @@ typedef struct FLICHUNKHEADER_
 } FLICHUNKHEADER;
 
 // 0x0000 mmu0 = rom
-// 0x2000 mmu1 = dot program
-// 0x4000 mmu2 = 
+// 0x2000 mmu1 = dot program originally
+// 0x4000 mmu2 = dot program copy
 // 0x6000 mmu3 = 8k framebuffer
 // 0x8000 mmu4 = stack, nextreg store & plenty of free space
 // 0xa000 mmu5 = scratch
@@ -178,7 +179,7 @@ void main()
         conprint("Can't open file\r");
         goto cleanup;
     }
-    fread(f, (unsigned char*)&hdr, sizeof(hdr));
+    fread(f, (unsigned char*)&hdr, sizeof(FLIHEADER));
     if (hdr.mFliMagic != 0xAF12)
     {
         conprint("Magic not ok, this isn't a fli file?\r");
@@ -222,7 +223,7 @@ void main()
     }
     
     setupisr7(); // Write trampoline to mmu7
-    //ei();
+    ei();
 
 loopanim:    
     frames = hdr.mFliFrames;
@@ -235,14 +236,14 @@ loopanim:
         framecounter-=2;
         
         frames--;
-        fread(f, (unsigned char*)&framehdr, sizeof(framehdr));
+        fread(f, (unsigned char*)&framehdr, sizeof(FLIFRAMEHEADER));
         if (framehdr.mMagic == 0xf1fa)
         {
 //            conprint("frame magic ok\r");
             for (unsigned short numchunks = 1; numchunks <= framehdr.mChunks; numchunks++)
             {
-                fread(f, (unsigned char*)&chunkhdr, sizeof(chunkhdr));
-                chunkhdr.mSize -= sizeof(chunkhdr);
+                fread(f, (unsigned char*)&chunkhdr, sizeof(FLICHUNKHEADER));
+                chunkhdr.mSize -= sizeof(FLICHUNKHEADER);
                 if (chunkhdr.mSize < 16384) // skip huge chunks for now
                 {
                     fread(f, scratch, chunkhdr.mSize);
@@ -462,9 +463,10 @@ loopanim:
     */                    
                     }
                 }
-                while (chunkhdr.mSize > 8192)
+                while (chunkhdr.mSize > 4096)
                 {
-                    fread(f, scratch, 8192);
+                    fread(f, scratch, 4096);
+                    chunkhdr.mSize -= 4096;
                 }
                 if (chunkhdr.mSize)
                 {

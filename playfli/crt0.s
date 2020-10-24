@@ -10,8 +10,8 @@
 _crt0_entry:	
 		di
 
-        ld (_cmdline),hl 
-        ld (_osiy), iy
+        ld (_cmdline-0x2000),hl 
+        ld (_osiy-0x2000), iy
 
 		;; store all regs
 		push af
@@ -26,7 +26,16 @@ _crt0_entry:
 		push bc
 		push de
 		push hl
-		ld (#store_sp),sp		; store SP
+		ld (#store_sp-0x2000),sp		; store SP
+
+        ld      hl, #0x0001 ; alloc zx memory
+        exx                             ; place parameters in alternates
+        ld      de, #0x01bd             ; IDE_BANK
+        ld      c, #7                   ; "usually 7, but 0 for some calls"
+        rst     #0x8
+        .db     #0x94                   ; +3dos call
+    	jp      nc, allocfail
+        ld      (_pagehandle2-0x2000),de
 
         ld      hl, #0x0001 ; alloc zx memory
         exx                             ; place parameters in alternates
@@ -35,49 +44,76 @@ _crt0_entry:
         rst     #0x8
         .db     #0x94                   ; +3dos call
     	jr      nc, allocfail
-        ld      (_pagehandle),de
+        ld      (_pagehandle4-0x2000),de
 
     	ld	    a,      #0x54 ; nextreg 
         ld      bc,     #0x243B   ; nextreg select
         out     (c),    a
         inc     b                 ; nextreg i/o
         in      a,      (c)
-        ld      (_mmu4), a
-        ld      a, (_pagehandle)
+        ld      (_mmu4-0x2000), a
+        ld      a, (_pagehandle4-0x2000)
         out     (c),     a
 
-;		ld sp, #0xffff ; for mmu7
+    	ld	    a,      #0x52 ; nextreg 
+        ld      bc,     #0x243B   ; nextreg select
+        out     (c),    a
+        inc     b                 ; nextreg i/o
+        in      a,      (c)
+        ld      (_mmu2-0x2000), a
+        ld      a, (_pagehandle2-0x2000)
+        out     (c),     a
+
 		ld sp, #0x9fff ; for mmu4
 
     ; set up dot command error handler - if we get an error,
-    ; do the crt0 cleanup
+    ; do the crt0 cleanup (this is pretty insufficient in this case,
+    ; should actually go to main()::cleanup label..
     ld      hl, #shutdown
 	rst     #0x8
 	.db     #0x95
 
-
-		call gsinit			; init static vars (sdcc style)
+        ld de, #0x4000 ; destination
+        ld hl, #0x2000 ; source
+        ld bc, #0x2000 ; count
+        ldir ; copy
 
 		;; start the os
-		call _main			
+		call _main
 
 shutdown:
     	ld	    a,      #0x54 ; nextreg
         ld      bc,     #0x243B   ; nextreg select
         out     (c),    a
         inc     b                 ; nextreg i/o
-        ld      a, (_mmu4)
+        ld      a, (_mmu4-0x2000)
         out     (c),     a
 
-    	ld	    de, (_pagehandle)       ; page
+    	ld	    a,      #0x52 ; nextreg
+        ld      bc,     #0x243B   ; nextreg select
+        out     (c),    a
+        inc     b                 ; nextreg i/o
+        ld      a, (_mmu2-0x2000)
+        out     (c),     a
+
+    	ld	    de, (_pagehandle2-0x2000)      ; page
         ld      hl, #0x0003             ; free zx memory
         exx                             ; place parameters in alternates
         ld      de, #0x01bd             ; IDE_BANK
         ld      c, #7                   ; "usually 7, but 0 for some calls"
         rst     #0x8
         .db     #0x94                   ; +3dos call
+
+    	ld	    de, (_pagehandle4-0x2000)      ; page
+        ld      hl, #0x0003             ; free zx memory
+        exx                             ; place parameters in alternates
+        ld      de, #0x01bd             ; IDE_BANK
+        ld      c, #7                   ; "usually 7, but 0 for some calls"
+        rst     #0x8
+        .db     #0x94                   ; +3dos call
+
 allocfail:	
-		ld sp,(#store_sp)		; restore original SP
+		ld sp,(#store_sp-0x2000)		; restore original SP
 		;; restore all regs
 		pop hl
 		pop de
@@ -97,9 +133,11 @@ allocfail:
 		ret	
 store_sp:	.word 252
 _cmdline:   .word 0
-_pagehandle: .word 0
+_pagehandle4: .word 0
+_pagehandle2: .word 0
 _osiy: .word 0
 _mmu4: .db 0
+_mmu2: .db 0
 _scr_x: .db 0
 _scr_y: .db 0
 _dbg: .db 0
