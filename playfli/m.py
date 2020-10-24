@@ -34,6 +34,7 @@ src = [
     "+cls",
 	"crt0.s",
     "../common/std.s",	
+    "../common/isr.s",
 	"esxdos.s",
 	"playfli.c"
 	]
