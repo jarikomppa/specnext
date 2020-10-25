@@ -5,6 +5,7 @@
 	.globl _fwrite
 	.globl _fseek
 	.globl _allocpage
+	.globl _reservepage
 	.globl _freepage
 	.globl _makepath
 	.globl _conprint
@@ -126,6 +127,24 @@ _allocpage::
 	jr      nc, allocfail
 	ld      l, e
 allocfail:	
+	ret
+
+;extern unsigned char reservepage(unsigned char page)
+_reservepage::
+    ld iy, (_osiy)
+	ld	    hl, #2+0
+	add	    hl, sp
+	ld	    e, (hl)  ; page
+    ld      hl, #0x0002 ; reserve zx memory
+    exx                             ; place parameters in alternates
+    ld      de, #0x01bd             ; IDE_BANK
+    ld      c, #7                   ; "usually 7, but 0 for some calls"
+    rst     #0x8
+    .db     #0x94                   ; +3dos call
+    ld      l, #0
+	jr      nc, reservefail
+	ld      l, e
+reservefail:	
 	ret
 
 ;extern void freepage(unsigned char page)

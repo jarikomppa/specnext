@@ -5,6 +5,8 @@
  * (practically public domain) 
  */
 
+#define MAX_FRAMEBUFFERS 16 // 32 is pretty much max (32*48=1536k)
+
 #define HWIF_IMPLEMENTATION
 #include "../common/hwif.c"
 
@@ -17,6 +19,7 @@ extern void makepath(char *pathspec); // must be 0xff terminated!
 extern void conprint(char *txt) __z88dk_fastcall;
 
 extern unsigned char allocpage();
+extern unsigned char reservepage(unsigned char page); // alloc specific page
 extern void freepage(unsigned char page);
 
 extern void memcpy(char *dest, const char *source, unsigned short count);
@@ -38,7 +41,6 @@ void dma_memcpy(char *dest, const char *source, unsigned short count)
         memcpy(dest, source, count);
         return;
     }
-    if (count > 256) return;
     PORT_DATAGEAR_DMA = 0x83; // DMA_DISABLE
     PORT_DATAGEAR_DMA = 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
     PORT_DATAGEAR_DMA = (unsigned short)source & 0xff;
@@ -132,9 +134,39 @@ typedef struct FLICHUNKHEADER_
 __at 0x6000 unsigned char fb[8192];
 __at 0xa000 unsigned char scratch[16384];
 __at 0x8000 unsigned char regstate[256];
+__at 0x8100 unsigned char allocpages[6 * MAX_FRAMEBUFFERS]; // 192B for 32
+__at 0x8400 unsigned char vpages[MAX_FRAMEBUFFERS + 1]; // 33B
+__at 0x8540 volatile unsigned char writepage;
+__at 0x8541 volatile unsigned char readpage;
+__at 0x8542 volatile unsigned char framedelay;
+
 
 void isr()
 {
+    char nextpage = readpage;
+    
+    framedelay++;
+    if (framedelay < 4) // TODO: needs fractional calculation..
+    { 
+        framedelay++;
+        return;
+    }
+    framedelay = 0;
+    
+    if (readpage < vpages[0])
+    {
+        nextpage++;
+    }
+    else
+    {
+        nextpage = 1;
+    }
+    
+    if (nextpage != writepage) // don't go past write head
+    {
+        readpage = nextpage;
+        writenextreg(NEXTREG_LAYER2_RAMPAGE, vpages[readpage] / 2); // 16k pages
+    }
 }
 
 void main()
@@ -144,7 +176,10 @@ void main()
     FLICHUNKHEADER chunkhdr;
     unsigned short frames;
     char mmu5p, mmu6p, mmu7p;
-    char f;
+    char f, v, prevpage, nextpage;
+    unsigned short i, j, c;
+
+    framedelay = 0;
 
 #define SAVEREG(x) regstate[x] = readnextreg(x)
 #define RESTOREREG(x) writenextreg(x, regstate[x])
@@ -161,6 +196,7 @@ void main()
     SAVEREG(NEXTREG_ENHANCED_ULA_CONTROL);
     SAVEREG(NEXTREG_ENHANCED_ULA_INK_COLOR_MASK);
     SAVEREG(NEXTREG_ULA_CONTROL);
+    SAVEREG(NEXTREG_LAYER2_RAMPAGE);
     
     writenextreg(NEXTREG_CPU_SPEED, 3); // 28MHz
     mmu5p = allocpage();
@@ -170,10 +206,45 @@ void main()
     writenextreg(NEXTREG_MMU6, mmu6p);
     writenextreg(NEXTREG_MMU7, mmu7p);
 
+    allocpages[0] = 0;
+    vpages[0] = 0;
+    
+    // TODO: include the nextzxos layer2 pages in vpages
+    
+    // Try to allocate a maximum of MAX_FRAMEBUFFERS framebuffers
+    for (i = 0, c = 32; i < MAX_FRAMEBUFFERS; i++)
+    {
+        v = c;
+        for (j = 0; j < 6; j++, c++)
+        {
+            f = reservepage(c);
+            allocpages[c - 32] = f;
+            if (!f) v = 0;
+        }
+        // if we fail to allocate even one of the 6 pages,
+        // don't include the page in our framebuffers
+        if (v) 
+        {
+            vpages[0]++;
+            vpages[vpages[0]] = v;
+        }
+    }
+    
+    prevpage = 2;
+    writepage = 2;
+    readpage = 1;
+    writenextreg(NEXTREG_LAYER2_RAMPAGE, vpages[readpage] / 2); // 16k pages
+
     //f = fopen("/testfli/ba_hvy.flc", 1); // open existing for read
-    //f = fopen("/testfli/ba.flc", 1); // open existing for read
-    f = fopen("/testfli/ba_small.flc", 1); // open existing for read
+    f = fopen("/testfli/ba.flc", 1); // open existing for read
+    //f = fopen("/testfli/ba_small.flc", 1); // open existing for read
     //f = fopen("/testfli/cube.flc", 1); // open existing for read
+    if (mmu5p== 0 || mmu6p == 0 || mmu7p == 0 || vpages[0] < 2)
+    {
+        conprint("Can't alloc memory\r");
+        goto cleanup;
+    }
+
     if (f == 0)
     {
         conprint("Can't open file\r");
@@ -210,13 +281,14 @@ void main()
     
     writenextreg(NEXTREG_ULA_CONTROL, 0x80); // disable ULA
 
+    for (i = 0; i < vpages[0]; i++)
     { // cls
         short int numlines;
         unsigned char *vbuffptr;
                 
         for (numlines = 0; numlines < 192; numlines++)
         {
-            writenextreg(NEXTREG_MMU3, 18 + (numlines >> 5)); // one 8k bank eats 32 scanlines
+            writenextreg(NEXTREG_MMU3, vpages[i + 1] + (numlines >> 5)); // one 8k bank eats 32 scanlines
             vbuffptr = fb + ((numlines & 31) << 8);
             memset(vbuffptr, 0, 256);
         }
@@ -229,11 +301,28 @@ loopanim:
     frames = hdr.mFliFrames;
     while (frames)
     {
-        writenextreg(NEXTREG_MMU3, 18);
-        *((unsigned short*)fb) = frames & 0x0707;
-        
-        while (framecounter < 2) {};
-        framecounter-=2;
+        prevpage = writepage;
+        nextpage = writepage;
+        if (writepage < vpages[0])
+        {
+            nextpage++;        
+        }
+        else
+        {
+            nextpage = 1;
+        }                
+
+        do
+        {
+            writenextreg(NEXTREG_MMU3, vpages[writepage]);
+            memset(fb, 0, 512);
+            i = writepage - readpage + MAX_FRAMEBUFFERS;
+            if (i > MAX_FRAMEBUFFERS) i -= MAX_FRAMEBUFFERS;
+            memset(fb, 7, i * 4);
+        } 
+        while (readpage == nextpage); // don't go past read head
+        writepage = nextpage;
+
         
         frames--;
         fread(f, (unsigned char*)&framehdr, sizeof(FLIFRAMEHEADER));
@@ -370,7 +459,7 @@ loopanim:
                             
                             for (numlines = 0; numlines < hdr.mHeight; numlines++)
                             {
-                                writenextreg(NEXTREG_MMU3, 18 + (numlines >> 5)); // one 8k bank eats 32 scanlines
+                                writenextreg(NEXTREG_MMU3, vpages[writepage] + (numlines >> 5)); // one 8k bank eats 32 scanlines
                                 vbuffptr = fb + ((numlines & 31) << 8);
                                 numpkt = *data;
                                 data++;
@@ -408,6 +497,17 @@ loopanim:
                             unsigned char *data;
                             data = (unsigned char*)&scratch[0];
                             
+                            // Since this is an RLE frame, copy previous frame data
+                            for (int i = 0; i < 6; i++)
+                            {
+                                writenextreg(NEXTREG_MMU5, vpages[prevpage] + i)
+                                writenextreg(NEXTREG_MMU3, vpages[writepage] + i);
+                                dma_memcpy(fb, scratch, 8192);
+                            }
+
+                            writenextreg(NEXTREG_MMU5, mmu5p); // restore scratch
+
+                            
                             addlines = (short int *)data;
                             startline = *addlines;
                             data += 4;
@@ -415,7 +515,7 @@ loopanim:
                             maxline = *addlines + startline;
                             for (linecount = startline; linecount < maxline; linecount++)
                             {
-                                writenextreg(NEXTREG_MMU3, 18 + (linecount >> 5)); // one 8k bank eats 32 scanlines
+                                writenextreg(NEXTREG_MMU3, vpages[writepage] + (linecount >> 5)); // one 8k bank eats 32 scanlines
                                 vbuffptr = fb + ((linecount & 31) << 8);
                                 numpkt = *data;
                                 data++;
@@ -428,14 +528,16 @@ loopanim:
                                     data++;
                                     if (size >= 0) 
                                     {
-                                        dma_memcpy(vbuffptr, data, size);
+                                        dma_memcpy(vbuffptr, data, ((unsigned short)size) & 0xff);
                                         vbuffptr += size;
                                         data += size;
-                                    } else {
+                                    } 
+                                    else 
+                                    {
                                         size = -size;
                                         databyte = *data;
                                         data++;
-                                        dma_memset(vbuffptr, databyte, size);
+                                        dma_memset(vbuffptr, databyte, ((unsigned short)size) & 0xff);
                                         vbuffptr += size;
                                     }
                                 }
@@ -497,7 +599,14 @@ cleanup:
     RESTOREREG(NEXTREG_ENHANCED_ULA_CONTROL);
     RESTOREREG(NEXTREG_ENHANCED_ULA_INK_COLOR_MASK);
     RESTOREREG(NEXTREG_ULA_CONTROL); 
- 
+    RESTOREREG(NEXTREG_LAYER2_RAMPAGE);
+
+    for (i = 0; i < MAX_FRAMEBUFFERS * 6; i++)
+    {
+        if (allocpages[i])
+            freepage(allocpages[i]);
+    }
+
     freepage(mmu5p);
     freepage(mmu6p);
     freepage(mmu7p);
