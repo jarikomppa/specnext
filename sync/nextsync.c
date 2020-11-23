@@ -29,11 +29,11 @@ extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short byte
 extern void makepath(char *pathspec); // must be 0xff terminated!
 extern void conprint(char *txt) __z88dk_fastcall;
 
-extern void writenextreg(unsigned char reg, unsigned char val);
-extern unsigned char readnextreg(unsigned char reg);
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
 
+__sfr __banked __at 0x243B PORT_NEXTREG_SELECT;
+__sfr __banked __at 0x253B PORT_NEXTREG_IO;
 __sfr __banked __at 0x133b UART_TX;
 __sfr __banked __at 0x143b UART_RX;
 __sfr __banked __at 0x153b UART_CTL;
@@ -68,6 +68,14 @@ static const unsigned short prescalar_values[] = {
    18,    19,    19,    20,    20,    21,    22,    18, // (13) 1500000
    14,    14,    14,    15,    15,    16,    16,    13  // (14) 2000000    
 };
+
+#define writenextreg(REG, VAL) { PORT_NEXTREG_SELECT = (REG); PORT_NEXTREG_IO = (VAL); }
+
+unsigned char readnextreg(char reg)
+{
+    PORT_NEXTREG_SELECT = reg;
+    return PORT_NEXTREG_IO;
+}
 
 // Uart setup based on code by D. ‘Xalior’ Rimron-Soutter
 void setupuart(char mode)
