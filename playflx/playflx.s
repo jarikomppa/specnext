@@ -3,25 +3,34 @@
 ; FLX video player
 ; by Jari Komppa, http://iki.fi/sol
 ; 2021
+    INCLUDE nextdefs.asm
 
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
     org     2000h
-    nextreg 7, 3 ; 28mhz mode. TODO: clean up
-    ld  hl, hello
-    call    printmsg
-    call    printnewline
+
+    STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
+    STORENEXTREG NEXTREG_MMU3, regstore + 1
+    STORENEXTREG NEXTREG_MMU5, regstore + 2
+    STORENEXTREG NEXTREG_MMU6, regstore + 3
+    STORENEXTREG NEXTREG_MMU7, regstore + 4
+    STORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
+    STORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
+    STORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 7
+    STORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 8
+    STORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 9
+    STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
+    STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
+    STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
+
+    
+    nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
+
     ld  hl, fn
     ld  b,  1       ; open existing
     call    fopen
     jp  c,  fail
-    jp      openok
-okmsg:
-    db "(ok)",0
-openok:
     ld (filehandle), a
-    ld hl, okmsg
-    call printmsg
 
     ld a, (filehandle)
     call freadbyte
@@ -43,8 +52,25 @@ openok:
     cp 'L'
     jp nz, fail
 
-    ld hl, okmsg
-    call printmsg
+; header tag read and apparently fine at this point.
+
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_DISPLAY_CONTROL_1
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    or 0x80       ; enable layer 2
+    out (c), a
+
+    nextreg NEXTREG_LAYER2_CONTROL, 0 ; 256x192 resolution, palette offset 0
+    nextreg NEXTREG_GENERAL_TRANSPARENCY, 0 ; transparent color = 0
+    nextreg NEXTREG_TRANSPARENCY_COLOR_FALLBACK, 0 ; fallback color = 0
+    nextreg NEXTREG_ENHANCED_ULA_CONTROL, 0x11 ; enable ulanext & layer2 palette 1
+    nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
+    nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
+
+
+; read rest of header
 
     ld a, (filehandle)
     call freadword
@@ -53,10 +79,14 @@ openok:
     call freadword
     ld (speed), hl
 
+; next up: 512 bytes of palette
+
     ld a, (filehandle)
     ld hl, (palette)
     ld bc, 512
     call fread
+
+; ready for animation loop
 
     ld a, (frames)
     ld b, a
@@ -65,9 +95,9 @@ animloop:
 
     ld a, (filehandle)
     call freadbyte
-    push af
-    call printbyte
-    pop af
+;    push af
+;    call printbyte
+;    pop af
     cp 13
     jp z, LZ1B
     cp 10
@@ -105,10 +135,28 @@ blockdone:
     pop bc
     djnz animloop
 
+fail:
+
     ld a, (filehandle)
     call fclose
 
+    RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
+    RESTORENEXTREG NEXTREG_MMU3, regstore + 1
+    RESTORENEXTREG NEXTREG_MMU5, regstore + 2
+    RESTORENEXTREG NEXTREG_MMU6, regstore + 3
+    RESTORENEXTREG NEXTREG_MMU7, regstore + 4
+    RESTORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
+    RESTORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
+    RESTORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 7
+    RESTORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 8
+    RESTORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 9
+    RESTORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
+    RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
+    RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
+
     ret
+
+LINEARRLE8: ;chunktype = 102; printf("l"); break;
 
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;
 BLACKFRAME: ;chunktype = 13;  printf("b"); break;
@@ -117,7 +165,6 @@ DELTA8FRAME: ;chunktype = 12; printf("d"); break;
 DELTA16FRAME: ;chunktype = 7;  printf("D"); break;
 FLI_COPY: ;chunktype = 16; printf("c"); break;
 ONECOLOR: ;chunktype = 101;  printf("o"); break;
-LINEARRLE8: ;chunktype = 102; printf("l"); break;
 LINEARRLE16: ;chunktype = 103; printf("L"); break;
 LINEARDELTA8: ;chunktype = 104; printf("e"); break;
 LINEARDELTA16: ;chunktype = 105; printf("E"); break;
@@ -143,212 +190,11 @@ palette:
     BLOCK 512, 0
 scratch:
     BLOCK 1024, 0
+regstore:
+    BLOCK 256, 0
 
-failmsg:
-    db "something failed",0
-fail:
-    ld hl, failmsg
-    call printmsg
-    ld a, (filehandle)
-    call fclose
-
-    ret
-
-hello:
-    db "hello world", 0
 fn:
-    db "/flx/cube1.flx", 0
+    db "/flx/cube1_lrle8.flx", 0
 
-printmsg:
-    ld a, (hl)
-    and a, a
-    ret z
-    rst 16
-    inc hl
-    jr printmsg
-
-hex:
-    db "0123456789ABCDEF"
-newline:
-    db "\r", 0
-
-;; ab 00 ab -> ba b0 0a
-printbyte:
-    ld b, a
-    and 0xf
-    ld c, a
-    ld a, b
-    .4 rrca
-    and 0xf
-    ld b, a
-    ; b and c contain nibbles now
-    ld hl, hex
-    ld d, 0
-    ld e, b
-    add hl, de
-    ld a, (hl)
-    ld hl, scratch
-    ld (hl), a
-    ld hl, hex
-    ld e, c
-    add hl, de
-    ld a, (hl)
-    ld hl, scratch+1
-    ld (hl), a
-    ld a, 0
-    inc hl
-    ld (hl), a
-    ld hl, scratch
-    jp printmsg
-
-printword:
-    push hl
-    ld a, h
-    call printbyte
-    pop hl
-    ld a, l
-    jp printbyte
-
-printnewline:
-    ld hl, newline
-    jp printmsg
-
-;extern unsigned char allocpage()
-; output l = page, 0 = error
-allocpage:
-    ld      hl, 0x0001 ; alloc zx memory
-    exx                             ; place parameters in alternates
-    ld      de, 0x01bd             ; IDE_BANK
-    ld      c, 7                   ; "usually 7, but 0 for some calls"
-    rst     0x8
-    .db     0x94                   ; +3dos call
-    ld      l, 0
-	jr      nc, allocfail
-	ld      l, e
-allocfail:	
-	ret
-
-;extern unsigned char reservepage(unsigned char page)
-; e = page, output l = page, 0 = error
-reservepage:
-    ld      hl, 0x0002 ; reserve zx memory
-    exx                             ; place parameters in alternates
-    ld      de, 0x01bd             ; IDE_BANK
-    ld      c, 7                   ; "usually 7, but 0 for some calls"
-    rst     0x8
-    .db     0x94                   ; +3dos call
-    ld      l, 0
-	jr      nc, reservefail
-	ld      l, e
-reservefail:	
-	ret
-
-;extern void freepage(unsigned char page)
-; e = page
-freepage:
-    ld      hl, 0x0003 ; free zx memory
-    exx                             ; place parameters in alternates
-    ld      de, 0x01bd             ; IDE_BANK
-    ld      c, 7                   ; "usually 7, but 0 for some calls"
-    rst     0x8
-    .db     0x94                   ; +3dos call
-	ret
-
-; hl = filename
-; b = mode
-;       esx_mode_read           $01    request read access
-;       esx_mode_write          $02    request write access
-;       esx_mode_use_header     $40    read/write +3DOS header
-;                plus one of:
-;       esx_mode_open_exist     $00    only open existing file
-;       esx_mode_open_creat     $08    open existing or create file
-;       esx_mode_creat_noexist  $04    create new file, error if exists
-;       esx_mode_creat_trunc    $0c    create new file, delete existing
-; output: a = handle, carry = failure
-fopen:
-	ld  a,  '*'
-	rst     0x8
-	.db     0x9a
-    ret
-
-;extern void fclose(unsigned char handle);
-; a = handle
-fclose:
-    rst     0x8
-    .db     0x9b
-    ret
-
-;extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
-; a = handle
-; hl = buf
-; bc = bytes
-; output: bc = bytes
-fread:
-    rst     0x8
-    .db     0x9d
-	ret
-
-fskipbytes:
-    ld bc, 1024
-    or a
-    sbc hl, bc
-    jr c, lastblock
-    push hl
-    jr skipread
-lastblock:
-    add hl, bc
-    ld b, h
-    ld c, l
-    ld hl, 0
-    push hl
-skipread:
-    ld hl, scratch
-    ld a, (filehandle)
-    call fread
-    pop hl
-    inc h
-    dec h
-    jr nz, fskipbytes
-    inc l
-    dec l
-    jr nz, fskipbytes
-    ret
-
-
-freadbyte:
-    ld hl, scratch
-    ld bc, 1
-    call fread
-    ld a, (scratch)
-    ret
-freadword:
-    ld hl, scratch
-    ld bc, 2
-    call fread
-    ld hl, (scratch)
-    ret
-freaddword:
-    ld hl, scratch
-    ld bc, 4
-    call fread
-    ret
-
-
-
-;extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
-; a = handle
-; bc = bytes
-; hl = buf
-fwrite:
-    rst     0x8
-    .db     0x9e
-	ret
-
-;extern void fseek(unsigned char handle, unsigned long ofs);
-; a = handle
-; offset = BCDE
-; mode = l (0 = set, 1 = fwd, 2 = bwd)
-fseek:
-    rst     0x8
-    .db     0x9f
-	ret
+    INCLUDE print.asm
+    INCLUDE esxdos.asm
