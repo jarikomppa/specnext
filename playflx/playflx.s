@@ -105,7 +105,7 @@
     ld (framebufferpage+11), a
     
     ld a, 2
-    ld (framebufferpages), a
+    ld (framebuffers), a
 
     ; TODO: allocate more backbuffers
 
@@ -125,6 +125,12 @@
     ld bc, 512
     call fread
 
+    ld de, 0
+    ld bc, 256*192
+    ld a, 0
+    call screenfill
+
+/*
 ; set palette
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld hl, palette
@@ -140,7 +146,13 @@ pal_loop2:
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
     djnz pal_loop2
-  
+  */
+    nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
+    ld b, 0
+pal_loop:
+    ld a, b
+    nextreg NEXTREG_PALETTE_VALUE, a
+    djnz pal_loop
 ; ready for animation loop
 
     ld a, (frames)
@@ -220,36 +232,6 @@ readbyte:
     pop de
     pop bc
     pop hl
-    ret
-
-; de = screen offset
-; bc = bytes to fill
-; a = byte to fill
-screenfill:
-
-    ;ld a, (framebufferpage)
-    ;nextreg NEXTREG_MMU3, a
-
-    ret
-
-; de = screen offset
-; bc = bytes to copy
-screencopyfromfile:
-    push bc
-    push de
-screencopyfromfile_loop:    
-    call readbyte
-    push bc
-    ld bc, 1
-    call screenfill    
-    pop bc
-    dec bc
-    inc de
-    ld a, b
-    or a, c
-    jr nz, screencopyfromfile_loop
-    pop de
-    pop bc
     ret
 
 LINEARRLE8: ;chunktype = 102; printf("l"); break;
@@ -355,7 +337,7 @@ scratch:
     BLOCK 1024, 0 ; todo: move elsewhere (or get rid of)
 regstore:
     BLOCK 32, 0 ; currently 13 used
-framebufferpages:
+framebuffers:
     db 0
 framebufferpage:
     BLOCK 64, 0    
@@ -363,5 +345,6 @@ framebufferpage:
 fn:
     db "/flx/cube1_lrle8.flx", 0
 
+    INCLUDE blitters.asm
     INCLUDE print.asm
     INCLUDE esxdos.asm
