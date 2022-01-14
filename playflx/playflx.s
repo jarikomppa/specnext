@@ -69,6 +69,45 @@
     nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
     nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
 
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_LAYER2_RAMPAGE
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    add a, a
+    ld (framebufferpage), a
+    inc a
+    ld (framebufferpage+1), a
+    inc a
+    ld (framebufferpage+2), a
+    inc a
+    ld (framebufferpage+3), a
+    inc a
+    ld (framebufferpage+4), a
+    inc a
+    ld (framebufferpage+5), a
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    add a, a
+    ld (framebufferpage+6), a
+    inc a
+    ld (framebufferpage+7), a
+    inc a
+    ld (framebufferpage+8), a
+    inc a
+    ld (framebufferpage+9), a
+    inc a
+    ld (framebufferpage+10), a
+    inc a
+    ld (framebufferpage+11), a
+    
+    ld a, 2
+    ld (framebufferpages), a
+
+    ; TODO: allocate more backbuffers
 
 ; read rest of header
 
@@ -86,6 +125,22 @@
     ld bc, 512
     call fread
 
+; set palette
+    nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
+    ld hl, palette
+    ld b, 0
+pal_loop1:
+    ld a, (hl)
+    inc hl
+    nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
+    djnz pal_loop1
+    ; since there's 512 bytes, let's do it again
+pal_loop2:
+    ld a, (hl)
+    inc hl
+    nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
+    djnz pal_loop2
+  
 ; ready for animation loop
 
     ld a, (frames)
@@ -95,9 +150,9 @@ animloop:
 
     ld a, (filehandle)
     call freadbyte
-;    push af
-;    call printbyte
-;    pop af
+    push af
+    call printbyte
+    pop af
     cp 13
     jp z, LZ1B
     cp 10
@@ -154,9 +209,36 @@ fail:
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
 
-    ret
+    ret ; exit application
 
 LINEARRLE8: ;chunktype = 102; printf("l"); break;
+    ; [runbytes][runvalue]
+    ; op < 0  [-runbytes][runvalue]
+    ; op >= 0 [copybytes][..bytes..]
+    ld a, (filehandle)
+    call freadword
+    ; hl = bytes in block
+    ld a, (framebufferpage)
+    nextreg NEXTREG_MMU3, a
+    ld de, 0x6000 
+decodeloop:
+    push hl
+
+    push de
+    ld a, (filehandle)
+    call freadbyte
+    pop de
+    ld (de), a
+    inc de
+
+    pop hl
+    dec hl
+
+    ld a, h
+    or a, l
+    jr nz, decodeloop
+    halt
+    jp blockdone
 
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;
 BLACKFRAME: ;chunktype = 13;  printf("b"); break;
@@ -187,11 +269,15 @@ frames:
 speed:
     db 0,0
 palette:
-    BLOCK 512, 0
+    BLOCK 512, 0 ; could be in temp data (like backbuffer)
 scratch:
-    BLOCK 1024, 0
+    BLOCK 1024, 0 ; todo: move elsewhere (or get rid of)
 regstore:
-    BLOCK 256, 0
+    BLOCK 32, 0 ; currently 13 used
+framebufferpages:
+    db 0
+framebufferpage:
+    BLOCK 64, 0    
 
 fn:
     db "/flx/cube1_lrle8.flx", 0

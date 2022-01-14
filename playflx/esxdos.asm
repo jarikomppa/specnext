@@ -82,8 +82,7 @@ fskipbytes:
     jr skipread
 lastblock:
     add hl, bc
-    ld b, h
-    ld c, l
+    ld bc, hl ; fake-ok
     ld hl, 0
     push hl
 skipread:
