@@ -211,34 +211,115 @@ fail:
 
     ret ; exit application
 
+readbyte:
+    push hl
+    push bc
+    push de
+    ld a, (filehandle)
+    call freadbyte
+    pop de
+    pop bc
+    pop hl
+    ret
+
+; de = screen offset
+; bc = bytes to fill
+; a = byte to fill
+screenfill:
+
+    ;ld a, (framebufferpage)
+    ;nextreg NEXTREG_MMU3, a
+
+    ret
+
+; de = screen offset
+; bc = bytes to copy
+screencopyfromfile:
+    push bc
+    push de
+screencopyfromfile_loop:    
+    call readbyte
+    push bc
+    ld bc, 1
+    call screenfill    
+    pop bc
+    dec bc
+    inc de
+    ld a, b
+    or a, c
+    jr nz, screencopyfromfile_loop
+    pop de
+    pop bc
+    ret
+
 LINEARRLE8: ;chunktype = 102; printf("l"); break;
     ; [runbytes][runvalue]
     ; op < 0  [-runbytes][runvalue]
     ; op >= 0 [copybytes][..bytes..]
     ld a, (filehandle)
-    call freadword
-    ; hl = bytes in block
-    ld a, (framebufferpage)
-    nextreg NEXTREG_MMU3, a
-    ld de, 0x6000 
+    call freadword ; hl = bytes in block
+    ld de, 0 ; screen offset
 decodeloop:
     push hl
 
-    push de
-    ld a, (filehandle)
-    call freadbyte
-    pop de
-    ld (de), a
-    inc de
+    ; [runbytes][runvalue]
+    call readbyte
+    ld b, 0
+    ld c, a
+    call readbyte
+    call screenfill
+    
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
 
     pop hl
     dec hl
-
+    dec hl
     ld a, h
     or a, l
-    jr nz, decodeloop
-    halt
-    jp blockdone
+    jp z, blockdone
+    push hl
+
+    call readbyte
+    or a
+    jp p, copy
+    ; op < 0  [-runbytes][runvalue]
+    neg
+    ld b, 0
+    ld c, a
+    call readbyte
+    call screenfill
+    
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
+
+    pop hl
+    dec hl
+    dec hl
+    ld a, h
+    or a, l
+    jp z, blockdone
+    jp decodeloop
+
+copy:
+    ; op >= 0 [copybytes][..bytes..]
+    ld b, 0
+    ld c, a
+    call screencopyfromfile
+    ;add de, bc
+    ex de, hl
+    add hl, bc
+    ex de, hl
+
+    pop hl
+    dec hl
+    sub hl, bc ; fake-ok
+    ld a, h
+    or a, l
+    jp z, blockdone
+    jp decodeloop
 
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;
 BLACKFRAME: ;chunktype = 13;  printf("b"); break;
