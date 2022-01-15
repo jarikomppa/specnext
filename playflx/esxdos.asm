@@ -1,5 +1,5 @@
 ;extern unsigned char allocpage()
-; output l = page, 0 = error
+; output e = page, nc = fail
 allocpage:
     ld      hl, 0x0001 ; alloc zx memory
     exx                             ; place parameters in alternates
@@ -7,10 +7,6 @@ allocpage:
     ld      c, 7                   ; "usually 7, but 0 for some calls"
     rst     0x8
     .db     0x94                   ; +3dos call
-    ld      l, 0
-	jr      nc, allocfail
-	ld      l, e
-allocfail:	
 	ret
 
 ;extern unsigned char reservepage(unsigned char page)
@@ -72,52 +68,6 @@ fread:
     rst     0x8
     .db     0x9d
 	ret
-
-fskipbytes:
-    ld bc, 1024
-    or a
-    sbc hl, bc
-    jr c, lastblock
-    push hl
-    jr skipread
-lastblock:
-    add hl, bc
-    ld bc, hl ; fake-ok
-    ld hl, 0
-    push hl
-skipread:
-    ld hl, scratch
-    ld a, (filehandle)
-    call fread
-    pop hl
-    inc h
-    dec h
-    jr nz, fskipbytes
-    inc l
-    dec l
-    jr nz, fskipbytes
-    ret
-
-
-freadbyte:
-    ld hl, scratch
-    ld bc, 1
-    call fread
-    ld a, (scratch)
-    ret
-freadword:
-    ld hl, scratch
-    ld bc, 2
-    call fread
-    ld hl, (scratch)
-    ret
-freaddword:
-    ld hl, scratch
-    ld bc, 4
-    call fread
-    ret
-
-
 
 ;extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
 ; a = handle

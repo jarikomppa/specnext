@@ -23,8 +23,13 @@
     STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
 
-    
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
+
+    call allocpage
+    jp nc, fail
+    ld a, e
+    ld (filepage), a
+    nextreg NEXTREG_MMU5, a    
 
     ld  hl, fn
     ld  b,  1       ; open existing
@@ -32,23 +37,21 @@
     jp  c,  fail
     ld (filehandle), a
 
-    ld a, (filehandle)
-    call freadbyte
+    call nextfileblock
+
+    call readbyte
     cp 'N'
     jp nz, fail
 
-    ld a, (filehandle)
-    call freadbyte
+    call readbyte
     cp 'X'
     jp nz, fail
 
-    ld a, (filehandle)
-    call freadbyte
+    call readbyte
     cp 'F'
     jp nz, fail
 
-    ld a, (filehandle)
-    call freadbyte
+    call readbyte
     cp 'L'
     jp nz, fail
 
@@ -111,27 +114,24 @@
 
 ; read rest of header
 
-    ld a, (filehandle)
-    call freadword
+    call readword
     ld (frames), hl
-    ld a, (filehandle)
-    call freadword
+    call readword
     ld (speed), hl
 
 ; next up: 512 bytes of palette
 
-    ld a, (filehandle)
-    ld hl, (palette)
+    ld hl, palette
     ld bc, 512
-    call fread
+    call read
 
     ld de, 0
     ld bc, 256*192
     ld a, 0
     call screenfill
 
-/*
 ; set palette
+
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld hl, palette
     ld b, 0
@@ -146,13 +146,16 @@ pal_loop2:
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
     djnz pal_loop2
-  */
+
+
+/*
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld b, 0
 pal_loop:
     ld a, b
     nextreg NEXTREG_PALETTE_VALUE, a
     djnz pal_loop
+*/    
 ; ready for animation loop
 
     ld a, (frames)
@@ -160,8 +163,7 @@ pal_loop:
 animloop:
     push bc
 
-    ld a, (filehandle)
-    call freadbyte
+    call readbyte
     push af
     call printbyte
     pop af
@@ -207,6 +209,10 @@ fail:
     ld a, (filehandle)
     call fclose
 
+    ld a, (filepage)
+    ld e, a
+    call freepage
+
     RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
     RESTORENEXTREG NEXTREG_MMU3, regstore + 1
     RESTORENEXTREG NEXTREG_MMU5, regstore + 2
@@ -221,25 +227,130 @@ fail:
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
 
+    or a ; clear carry
     ret ; exit application
 
+; out: a
 readbyte:
+    push hl
+    push bc
+    ld hl, 8192 + 0xa000
+    ld bc, (fileindex)
+    sbc hl, bc
+    call z, nextfileblock
+    ld hl, (fileindex)
+    ld a, (hl)  
+    inc hl
+    ld (fileindex), hl
+    pop bc
+    pop hl
+    ret
+
+; out: hl
+readword:
+    call readbyte
+    ld l, a
+    call readbyte
+    ld h, a
+    ret
+
+; hl = buf
+; bc = bytes
+read:
+    push hl
+    push bc
+    ld hl, 8192 + 0xa000
+    ld bc, (fileindex)
+    sbc hl, bc
+    jr nz, doread
+    call nextfileblock
+    ld hl, 8192
+doread:
+    ; hl = max bytes to read at once
+    pop bc  ; desired copy length
+    push bc
+    push hl
+    sbc hl, bc
+    jr nc, oklen
+    pop bc   ; max len
+    push bc
+oklen:
+    pop hl ; throw-away max len
+    pop hl ; original copy length
+    pop de ; destination address
+    ; now de = dest, bc = byte count, hl = original byte count
+    push hl
+    push bc
+    ld hl, (fileindex)
+    ldir ; [de]=[hl], de++, hl++, bc--
+    pop bc
+    ld hl, (fileindex)
+    add hl, bc
+    ld (fileindex), hl
+    pop hl
+    sbc hl, bc
+    ret z      ; If byte count is zero, we're done
+    ld bc, hl  ; fake-ok
+    ld hl, de  ; fake-ok
+    jp read    ; Go again
+
+
+; bc = bytes
+skipbytes:
+    push bc
+    ld hl, 8192 + 0xa000
+    ld bc, (fileindex)
+    sbc hl, bc
+    jr nz, doskip
+    call nextfileblock
+    ld hl, 8192
+doskip:
+    ; hl = max bytes to read at once
+    pop bc  ; desired copy length
+    push bc
+    push hl
+    sbc hl, bc
+    jr nc, skip_oklen
+    pop bc   ; max len
+    push bc
+skip_oklen:
+    pop hl ; throw-away max len
+    pop hl ; original copy length
+    ; now bc = byte count, hl = original byte count
+    push hl
+    ld hl, (fileindex)
+    add hl, bc
+    ld (fileindex), hl
+    pop hl
+    sbc hl, bc
+    ret z      ; If byte count is zero, we're done
+    ld bc, hl  ; fake-ok
+    jp skipbytes ; Go again
+
+
+nextfileblock:
+    push af
     push hl
     push bc
     push de
     ld a, (filehandle)
-    call freadbyte
+    ld hl, 0xa000 ; mmu5
+    ld bc, 8192
+    call fread
+    ld hl, 0xa000
+    ld (fileindex), hl
     pop de
     pop bc
     pop hl
+    pop af
     ret
+
 
 LINEARRLE8: ;chunktype = 102; printf("l"); break;
     ; [runbytes][runvalue]
     ; op < 0  [-runbytes][runvalue]
     ; op >= 0 [copybytes][..bytes..]
-    ld a, (filehandle)
-    call freadword ; hl = bytes in block
+    call readword ; hl = bytes in block
     ld de, 0 ; screen offset
 decodeloop:
     push hl
@@ -319,24 +430,27 @@ LZ3: ;chunktype = 108; printf("3"); break;
 LZ1B: ;chunktype = 109; printf("4"); break;
 LZ2B: ;chunktype = 110; printf("5"); break;
 UNKNOWN:
-    ld a, (filehandle)
-    call freadword
-    call fskipbytes
+    call readword
+    ld bc, hl ; fake-ok
+    call skipbytes
     jp blockdone
+
 
 
 filehandle:
     db 0
+fileindex:
+    dw 0xa000
 frames:
     db 0,0
 speed:
     db 0,0
 palette:
     BLOCK 512, 0 ; could be in temp data (like backbuffer)
-scratch:
-    BLOCK 1024, 0 ; todo: move elsewhere (or get rid of)
 regstore:
     BLOCK 32, 0 ; currently 13 used
+filepage:
+    db 0
 framebuffers:
     db 0
 framebufferpage:
