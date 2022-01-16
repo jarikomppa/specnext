@@ -5,9 +5,22 @@
 ; 2021
     INCLUDE nextdefs.asm
 
+
+; 0x0000 mmu0 = rom
+; 0x2000 mmu1 = dot program
+; 0x4000 mmu2 = 
+; 0x6000 mmu3 = 8k framebuffer
+; 0x8000 mmu4 = 
+; 0xa000 mmu5 = file i/o buffer
+; 0xc000 mmu6 = 
+; 0xe000 mmu7 = isr trampoline + empty space up to 0xfe00
+
+SCRATCH EQU 0xe000 
+
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
     org     2000h
+    di
 
     STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
     STORENEXTREG NEXTREG_MMU3, regstore + 1
@@ -30,6 +43,12 @@
     ld a, e
     ld (filepage), a
     nextreg NEXTREG_MMU5, a    
+
+    call allocpage
+    jp nc, fail
+    ld a, e
+    ld (isrpage), a
+    nextreg NEXTREG_MMU7, a    
 
     ld  hl, fn
     ld  b,  1       ; open existing
@@ -56,6 +75,14 @@
     jp nz, fail
 
 ; header tag read and apparently fine at this point.
+
+    ld de, 0
+    ld bc, 256*192
+    ld a, 0
+    call screenfill
+
+    ld de, isr
+    call setupisr7
 
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_DISPLAY_CONTROL_1
@@ -121,19 +148,14 @@
 
 ; next up: 512 bytes of palette
 
-    ld hl, palette
+    ld hl, SCRATCH
     ld bc, 512
     call read
-
-    ld de, 0
-    ld bc, 256*192
-    ld a, 0
-    call screenfill
 
 ; set palette
 
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
-    ld hl, palette
+    ld hl, SCRATCH
     ld b, 0
 pal_loop1:
     ld a, (hl)
@@ -206,10 +228,18 @@ blockdone:
 
 fail:
 
+    di
+
+    call closeisr7
+
     ld a, (filehandle)
     call fclose
 
     ld a, (filepage)
+    ld e, a
+    call freepage
+
+    ld a, (isrpage)
     ld e, a
     call freepage
 
@@ -228,214 +258,12 @@ fail:
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
 
     or a ; clear carry
+    ei
     ret ; exit application
 
-; out: a
-readbyte:
-    push hl
-    push bc
-    ld hl, 8192 + 0xa000
-    ld bc, (fileindex)
-    sbc hl, bc
-    call z, nextfileblock
-    ld hl, (fileindex)
-    ld a, (hl)  
-    inc hl
-    ld (fileindex), hl
-    pop bc
-    pop hl
-    ret
-
-; out: hl
-readword:
-    call readbyte
-    ld l, a
-    call readbyte
-    ld h, a
-    ret
-
-; hl = buf
-; bc = bytes
-read:
-    push hl
-    push bc
-    ld hl, 8192 + 0xa000
-    ld bc, (fileindex)
-    sbc hl, bc
-    jr nz, doread
-    call nextfileblock
-    ld hl, 8192
-doread:
-    ; hl = max bytes to read at once
-    pop bc  ; desired copy length
-    push bc
-    push hl
-    sbc hl, bc
-    jr nc, oklen
-    pop bc   ; max len
-    push bc
-oklen:
-    pop hl ; throw-away max len
-    pop hl ; original copy length
-    pop de ; destination address
-    ; now de = dest, bc = byte count, hl = original byte count
-    push hl
-    push bc
-    ld hl, (fileindex)
-    ldir ; [de]=[hl], de++, hl++, bc--
-    pop bc
-    ld hl, (fileindex)
-    add hl, bc
-    ld (fileindex), hl
-    pop hl
-    sbc hl, bc
-    ret z      ; If byte count is zero, we're done
-    ld bc, hl  ; fake-ok
-    ld hl, de  ; fake-ok
-    jp read    ; Go again
-
-
-; bc = bytes
-skipbytes:
-    push bc
-    ld hl, 8192 + 0xa000
-    ld bc, (fileindex)
-    sbc hl, bc
-    jr nz, doskip
-    call nextfileblock
-    ld hl, 8192
-doskip:
-    ; hl = max bytes to read at once
-    pop bc  ; desired copy length
-    push bc
-    push hl
-    sbc hl, bc
-    jr nc, skip_oklen
-    pop bc   ; max len
-    push bc
-skip_oklen:
-    pop hl ; throw-away max len
-    pop hl ; original copy length
-    ; now bc = byte count, hl = original byte count
-    push hl
-    ld hl, (fileindex)
-    add hl, bc
-    ld (fileindex), hl
-    pop hl
-    sbc hl, bc
-    ret z      ; If byte count is zero, we're done
-    ld bc, hl  ; fake-ok
-    jp skipbytes ; Go again
-
-
-nextfileblock:
-    push af
-    push hl
-    push bc
-    push de
-    ld a, (filehandle)
-    ld hl, 0xa000 ; mmu5
-    ld bc, 8192
-    call fread
-    ld hl, 0xa000
-    ld (fileindex), hl
-    pop de
-    pop bc
-    pop hl
-    pop af
-    ret
-
-
-LINEARRLE8: ;chunktype = 102; printf("l"); break;
-    ; [runbytes][runvalue]
-    ; op < 0  [-runbytes][runvalue]
-    ; op >= 0 [copybytes][..bytes..]
-    call readword ; hl = bytes in block
-    ld de, 0 ; screen offset
-decodeloop:
-    push hl
-
-    ; [runbytes][runvalue]
-    call readbyte
-    ld b, 0
-    ld c, a
-    call readbyte
-    call screenfill
-    
-    ex de, hl  ;
-    add hl, bc ; add de, bc
-    ex de, hl  ;
-
-    pop hl
-    dec hl
-    dec hl
-    ld a, h
-    or a, l
-    jp z, blockdone
-    push hl
-
-    call readbyte
-    or a
-    jp p, copy
-    ; op < 0  [-runbytes][runvalue]
-    neg
-    ld b, 0
-    ld c, a
-    call readbyte
-    call screenfill
-    
-    ex de, hl  ;
-    add hl, bc ; add de, bc
-    ex de, hl  ;
-
-    pop hl
-    dec hl
-    dec hl
-    ld a, h
-    or a, l
-    jp z, blockdone
-    jp decodeloop
-
-copy:
-    ; op >= 0 [copybytes][..bytes..]
-    ld b, 0
-    ld c, a
-    call screencopyfromfile
-    ;add de, bc
-    ex de, hl
-    add hl, bc
-    ex de, hl
-
-    pop hl
-    dec hl
-    sub hl, bc ; fake-ok
-    ld a, h
-    or a, l
-    jp z, blockdone
-    jp decodeloop
-
-SAMEFRAME: ;chunktype = 0;  printf("s"); break;
-BLACKFRAME: ;chunktype = 13;  printf("b"); break;
-RLEFRAME: ;chunktype = 15; printf("r"); break;
-DELTA8FRAME: ;chunktype = 12; printf("d"); break;
-DELTA16FRAME: ;chunktype = 7;  printf("D"); break;
-FLI_COPY: ;chunktype = 16; printf("c"); break;
-ONECOLOR: ;chunktype = 101;  printf("o"); break;
-LINEARRLE16: ;chunktype = 103; printf("L"); break;
-LINEARDELTA8: ;chunktype = 104; printf("e"); break;
-LINEARDELTA16: ;chunktype = 105; printf("E"); break;
-LZ1: ;chunktype = 106; printf("1"); break;
-LZ2: ;chunktype = 107; printf("2"); break;
-LZ3: ;chunktype = 108; printf("3"); break;
-LZ1B: ;chunktype = 109; printf("4"); break;
-LZ2B: ;chunktype = 110; printf("5"); break;
-UNKNOWN:
-    call readword
-    ld bc, hl ; fake-ok
-    call skipbytes
-    jp blockdone
-
-
+isr:
+    ei
+    reti
 
 filehandle:
     db 0
@@ -445,12 +273,12 @@ frames:
     db 0,0
 speed:
     db 0,0
-palette:
-    BLOCK 512, 0 ; could be in temp data (like backbuffer)
 regstore:
     BLOCK 32, 0 ; currently 13 used
 filepage:
     db 0
+isrpage:
+    db 0    
 framebuffers:
     db 0
 framebufferpage:
@@ -459,6 +287,9 @@ framebufferpage:
 fn:
     db "/flx/cube1_lrle8.flx", 0
 
+    INCLUDE isr.asm
+    INCLUDE cachedio.asm
+    INCLUDE decoders.asm
     INCLUDE blitters.asm
     INCLUDE print.asm
     INCLUDE esxdos.asm

@@ -10,8 +10,6 @@ hex:
     db "0123456789ABCDEF"
 newline:
     db "\r", 0
-bytestringbuf:
-    db 0,0,0,0
 
 ;; ab 00 ab -> ba b0 0a
 printbyte:
@@ -28,18 +26,18 @@ printbyte:
     ld e, b
     add hl, de
     ld a, (hl)
-    ld hl, bytestringbuf
+    ld hl, SCRATCH
     ld (hl), a
     ld hl, hex
     ld e, c
     add hl, de
     ld a, (hl)
-    ld hl, bytestringbuf+1
+    ld hl, SCRATCH+1
     ld (hl), a
     ld a, 0
     inc hl
     ld (hl), a
-    ld hl, bytestringbuf
+    ld hl, SCRATCH
     jp printmsg
 
 printword:
