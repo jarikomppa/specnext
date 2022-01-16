@@ -8,18 +8,20 @@
 
 ; 0x0000 mmu0 = rom
 ; 0x2000 mmu1 = dot program
-; 0x4000 mmu2 = 
+; 0x4000 mmu2 = unmapped for std prints to work
 ; 0x6000 mmu3 = 8k framebuffer
-; 0x8000 mmu4 = stack
+; 0x8000 mmu4 = stack/scratch
 ; 0xa000 mmu5 = file i/o buffer
-; 0xc000 mmu6 = 
+; 0xc000 mmu6 = dot program copy (for isr to work - isr + rom calls = boom)
 ; 0xe000 mmu7 = isr trampoline + empty space up to 0xfe00
 
+DOTADDR EQU 0xc000
+DOTDIFF EQU 0xc000-0x2000
 SCRATCH EQU 0x8000 
 
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
-    org     2000h    
+    org     DOTADDR
     di
     push af
     push bc
@@ -34,7 +36,49 @@ SCRATCH EQU 0x8000
     push de
     push hl
 
-    ld (spstore), sp
+    ; grab mmu6 nextreg
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_MMU6
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    push af
+
+    ; alloc page for our dot command copy
+    ld      hl, 0x0001 ; alloc zx memory
+    exx                             ; place parameters in alternates
+    ld      de, 0x01bd             ; IDE_BANK
+    ld      c, 7                   ; "usually 7, but 0 for some calls"
+    rst     0x8
+    .db     0x94                   ; +3dos call
+    jp nc, allocfail-DOTDIFF        ; in case of failure, do a clean exit
+
+    push af
+    nextreg NEXTREG_MMU6, a        ; use the newly allocated page
+    
+    ld (spstore-DOTDIFF), sp
+
+    ; set up dot command error handler - if we get an error,
+    ; do the cleanup. No idea if this will actually work.
+    ld      hl, teardown-DOTDIFF
+	rst     0x8
+	.db     0x95
+
+    ; Copy the dot command over to the newly allocated page
+    ld de, DOTADDR
+    ld hl, 0x2000
+    ld bc, 0x2000
+    ldir
+    
+    ; And jump to it.
+    jp realstart
+realstart:
+
+    ;call printbyte
+    ;jp teardown-DOTDIFF
+
+    STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
+    nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
 
     STORENEXTREG NEXTREG_MMU4, regstore + 13
     call allocpage
@@ -44,8 +88,6 @@ SCRATCH EQU 0x8000
     nextreg NEXTREG_MMU4, a    
     ld sp, 0xa000
 
-
-    STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
     STORENEXTREG NEXTREG_MMU3, regstore + 1
     STORENEXTREG NEXTREG_MMU5, regstore + 2
     STORENEXTREG NEXTREG_MMU6, regstore + 3
@@ -58,8 +100,6 @@ SCRATCH EQU 0x8000
     STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
     STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
-
-    nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
 
     call setupdma
 
@@ -74,7 +114,6 @@ SCRATCH EQU 0x8000
     ld a, e
     ld (filepage), a
     nextreg NEXTREG_MMU5, a    
-
 
     ld  hl, fn
     ld  b,  1       ; open existing
@@ -131,7 +170,6 @@ SCRATCH EQU 0x8000
     ld de, isr
     call setupisr7
 
-
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_DISPLAY_CONTROL_1
     out (c), a
@@ -162,7 +200,6 @@ SCRATCH EQU 0x8000
     call read
 
 ; set palette
-
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld hl, SCRATCH
     ld b, 0
@@ -171,6 +208,7 @@ pal_loop1:
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
     djnz pal_loop1
+
     ; since there's 512 bytes, let's do it again
 pal_loop2:
     ld a, (hl)
@@ -186,11 +224,13 @@ pal_loop:
     ld a, b
     nextreg NEXTREG_PALETTE_VALUE, a
     djnz pal_loop
-*/    
+*/  
+
 ; ready for animation loop
 
     ld a, (frames)
     ld b, a
+    ei
 animloop:
     push bc
 
@@ -232,6 +272,7 @@ animloop:
     jp z, FLI_COPY
     jp UNKNOWN
 blockdone:
+    ;halt
     pop bc
     djnz animloop
 
@@ -273,7 +314,19 @@ fail:
     call freepage
     RESTORENEXTREG NEXTREG_MMU4, regstore + 13
 
-    ld sp, (spstore)
+    jp teardown-DOTDIFF
+teardown:
+    ld sp, (spstore-DOTDIFF)
+    pop af
+    ld      hl, 0x0003 ; free zx memory
+    exx                             ; place parameters in alternates
+    ld      de, 0x01bd             ; IDE_BANK
+    ld      c, 7                   ; "usually 7, but 0 for some calls"
+    rst     0x8
+    .db     0x94                   ; +3dos call
+allocfail:
+    pop af
+    nextreg NEXTREG_MMU6, a
 
     pop hl
     pop de
