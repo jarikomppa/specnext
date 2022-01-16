@@ -61,6 +61,8 @@ SCRATCH EQU 0x8000
 
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
 
+    call setupdma
+
     call allocpage
     jp nc, fail
     ld a, e
@@ -124,7 +126,7 @@ SCRATCH EQU 0x8000
     ld de, 0
     ld bc, 256*192
     ld a, 0
-    call screenfill ; causes crash, why?
+    call screenfill 
 
     ld de, isr
     call setupisr7

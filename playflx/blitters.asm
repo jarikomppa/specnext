@@ -1,3 +1,14 @@
+setupdma:
+    ld a, 0b01010100; // R1-write A time byte, increment, to memory, bitmask
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b00000010; // 2t
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b01010000; // R2-write B time byte, increment, to memory, bitmask
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b00000010; // R2-Cycle length port B
+    out (PORT_DATAGEAR_DMA), a
+    ret
+
 ; de dest
 ; hl src
 ; bc bytes
@@ -25,14 +36,6 @@ dma_memcpy:
     pop hl
     out (c), l ; count
     out (c), h ; count
-    ld a, 0b01010100; // R1-write A time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // 2t
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b01010000; // R2-write B time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // R2-Cycle length port B
-    out (PORT_DATAGEAR_DMA), a
     ld a, 0b10101101; // R4-Continuous mode (use this for block transfer), write dest adress
     out (PORT_DATAGEAR_DMA), a
     pop hl
