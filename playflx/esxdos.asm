@@ -10,7 +10,7 @@ allocpage:
 	ret
 
 ;extern unsigned char reservepage(unsigned char page)
-; e = page, output l = page, 0 = error
+; e = page, output e = page, nc = fail
 reservepage:
     ld      hl, 0x0002 ; reserve zx memory
     exx                             ; place parameters in alternates
@@ -18,10 +18,6 @@ reservepage:
     ld      c, 7                   ; "usually 7, but 0 for some calls"
     rst     0x8
     .db     0x94                   ; +3dos call
-    ld      l, 0
-	jr      nc, reservefail
-	ld      l, e
-reservefail:	
 	ret
 
 ;extern void freepage(unsigned char page)

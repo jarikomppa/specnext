@@ -158,8 +158,47 @@ realstart:
     ld a, 2
     ld (framebuffers), a
 
+    ; allocate more framebuffers
+    ld b, 37 ; total framebuffers to try
+    ld e, 0 ; page; 6 pages per framebuffer (222 pages to reserve)
+    ld hl, allocpages
+    ld ix, framebufferpage+2
+nextframebuffer:
+    push bc
+    ld a, e
+    ld (SCRATCH+100), a ; put framebuffer's first page to scratch
+    ld c, 0 ; successful reserves
+    ld b, 6 ; pages per framebuffer
+nextframebufferpage:
+    push bc
+    push de
+    push hl
+    call reservepage
+    pop hl
+    pop de
+    pop bc
+    jr nc, reservefail
+    inc c         ; on successful alloc, increase c,
+    ld (hl), e    ; store page to be freed on teardown
+    inc hl        ; allocpages++
+reservefail:
+    inc e         ; next page
+    djnz nextframebufferpage
+    ld a, c
+    cp 6
+    jr nz, noframebuffer ; failed to allocate at least 1 of 6 pages, no twinkie
+    ld a, (SCRATCH+100) ; put the first page of the framebuffer to table
+    ld (ix), a
+    call printbyte
+    inc ix
+    ld a, (framebuffers) ; increase number of framebuffers
+    inc a
+    ld (framebuffers), a
+    call printbyte
+noframebuffer:    
+    pop bc
+    djnz nextframebuffer
 
-    ; TODO: allocate more backbuffers
 
     ld de, 0
     ld bc, 256*192
@@ -244,9 +283,7 @@ wait:
     jr z, wait ; wait for the isr to progress
 
     call readbyte
-    push af
-    call printbyte
-    pop af
+    ;call printbyte
     cp 13
     jp z, LZ1B
     cp 10
@@ -302,6 +339,23 @@ fail:
     ld a, (filepage)
     ld e, a
     call freepage
+
+    ; free allocated framebuffer pages
+    ld hl, allocpages
+    ld b, 0
+freeframebuffers:
+    ld a, (hl)
+    cp 0
+    jr z, notallocated
+    ld e, a
+    push bc
+    push hl
+    call freepage
+    pop hl
+    pop bc
+notallocated:
+    inc hl 
+    djnz freeframebuffers
 
 
     RESTORENEXTREG NEXTREG_MMU3, regstore + 1
@@ -418,7 +472,7 @@ speed:
 framewaits:
     db 0
 regstore:
-    BLOCK 32, 0 ; currently 14 used
+    BLOCK 16, 0 ; currently 14 used
 filepage:
     db 0
 isrpage:
@@ -428,7 +482,9 @@ stackpage:
 framebuffers:
     db 0
 framebufferpage:
-    BLOCK 64, 0
+    BLOCK 40, 0
+allocpages:
+    BLOCK 256, 0
 rendertarget:
     db 0
 renderpage:

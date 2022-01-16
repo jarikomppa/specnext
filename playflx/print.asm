@@ -11,8 +11,12 @@ hex:
 newline:
     db "\r", 0
 
-;; ab 00 ab -> ba b0 0a
 printbyte:
+    push af
+    push bc
+    push de
+    push hl
+
     ld b, a
     and 0xf
     ld c, a
@@ -38,7 +42,13 @@ printbyte:
     inc hl
     ld (hl), a
     ld hl, SCRATCH
-    jp printmsg
+    call printmsg
+
+    pop hl
+    pop de
+    pop bc
+    pop af
+    ret
 
 printword:
     push hl
