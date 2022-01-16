@@ -8,12 +8,8 @@
     ENDM
 
     MACRO RESTORENEXTREG regno, addr
-        ld bc, 0x243B ; nextreg select
-        ld a, regno
-        out (c), a
-        inc b         ; nextreg i/o
         ld a, (addr)
-        out (c), a
+        nextreg regno, a
     ENDM
 
     MACRO STORENEXTREGMASK regno, addr, mask

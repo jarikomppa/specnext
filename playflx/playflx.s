@@ -10,17 +10,40 @@
 ; 0x2000 mmu1 = dot program
 ; 0x4000 mmu2 = 
 ; 0x6000 mmu3 = 8k framebuffer
-; 0x8000 mmu4 = 
+; 0x8000 mmu4 = stack
 ; 0xa000 mmu5 = file i/o buffer
 ; 0xc000 mmu6 = 
 ; 0xe000 mmu7 = isr trampoline + empty space up to 0xfe00
 
-SCRATCH EQU 0xe000 
+SCRATCH EQU 0x8000 
 
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
-    org     2000h
+    org     2000h    
     di
+    push af
+    push bc
+    push de
+    push hl
+    push ix
+    push iy
+    ex af, af'
+    push af
+    exx
+    push bc
+    push de
+    push hl
+
+    ld (spstore), sp
+
+    STORENEXTREG NEXTREG_MMU4, regstore + 13
+    call allocpage
+    jp nc, fail
+    ld a, e
+    ld (stackpage), a
+    nextreg NEXTREG_MMU4, a    
+    ld sp, 0xa000
+
 
     STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
     STORENEXTREG NEXTREG_MMU3, regstore + 1
@@ -41,14 +64,15 @@ SCRATCH EQU 0xe000
     call allocpage
     jp nc, fail
     ld a, e
-    ld (filepage), a
-    nextreg NEXTREG_MMU5, a    
+    ld (isrpage), a
+    nextreg NEXTREG_MMU7, a    
 
     call allocpage
     jp nc, fail
     ld a, e
-    ld (isrpage), a
-    nextreg NEXTREG_MMU7, a    
+    ld (filepage), a
+    nextreg NEXTREG_MMU5, a    
+
 
     ld  hl, fn
     ld  b,  1       ; open existing
@@ -74,15 +98,37 @@ SCRATCH EQU 0xe000
     cp 'L'
     jp nz, fail
 
+
 ; header tag read and apparently fine at this point.
+
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_LAYER2_RAMPAGE
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    add a, a
+    ld (framebufferpage), a
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    add a, a
+    ld (framebufferpage+1), a
+    
+    ld a, 2
+    ld (framebuffers), a
+
+    ; TODO: allocate more backbuffers
 
     ld de, 0
     ld bc, 256*192
     ld a, 0
-    call screenfill
+    call screenfill ; causes crash, why?
 
     ld de, isr
     call setupisr7
+
 
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_DISPLAY_CONTROL_1
@@ -99,45 +145,6 @@ SCRATCH EQU 0xe000
     nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
     nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
 
-    ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_LAYER2_RAMPAGE
-    out (c), a
-    inc b         ; nextreg i/o
-    in a, (c)
-    add a, a
-    ld (framebufferpage), a
-    inc a
-    ld (framebufferpage+1), a
-    inc a
-    ld (framebufferpage+2), a
-    inc a
-    ld (framebufferpage+3), a
-    inc a
-    ld (framebufferpage+4), a
-    inc a
-    ld (framebufferpage+5), a
-    ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
-    out (c), a
-    inc b         ; nextreg i/o
-    in a, (c)
-    add a, a
-    ld (framebufferpage+6), a
-    inc a
-    ld (framebufferpage+7), a
-    inc a
-    ld (framebufferpage+8), a
-    inc a
-    ld (framebufferpage+9), a
-    inc a
-    ld (framebufferpage+10), a
-    inc a
-    ld (framebufferpage+11), a
-    
-    ld a, 2
-    ld (framebuffers), a
-
-    ; TODO: allocate more backbuffers
 
 ; read rest of header
 
@@ -239,11 +246,7 @@ fail:
     ld e, a
     call freepage
 
-    ld a, (isrpage)
-    ld e, a
-    call freepage
 
-    RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
     RESTORENEXTREG NEXTREG_MMU3, regstore + 1
     RESTORENEXTREG NEXTREG_MMU5, regstore + 2
     RESTORENEXTREG NEXTREG_MMU6, regstore + 3
@@ -256,6 +259,32 @@ fail:
     RESTORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
+    RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
+
+
+    ld a, (isrpage)
+    ld e, a
+    call freepage
+
+    ld a, (stackpage)
+    ld e, a
+    call freepage
+    RESTORENEXTREG NEXTREG_MMU4, regstore + 13
+
+    ld sp, (spstore)
+
+    pop hl
+    pop de
+    pop bc
+    pop af
+    exx
+    ex af,af'
+    pop iy
+    pop ix
+    pop hl
+    pop de
+    pop bc
+    pop af
 
     or a ; clear carry
     ei
@@ -274,15 +303,19 @@ frames:
 speed:
     db 0,0
 regstore:
-    BLOCK 32, 0 ; currently 13 used
+    BLOCK 32, 0 ; currently 14 used
 filepage:
     db 0
 isrpage:
     db 0    
+stackpage:
+    db 0
 framebuffers:
     db 0
 framebufferpage:
-    BLOCK 64, 0    
+    BLOCK 64, 0
+spstore:
+    db 0,0
 
 fn:
     db "/flx/cube1_lrle8.flx", 0

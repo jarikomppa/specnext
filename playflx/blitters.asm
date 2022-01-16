@@ -4,29 +4,25 @@
 ; a = byte to fill
 screenfill:
     push af
-    push bc
-    push de
     ; check if we're filling zero bytes
     ld a, b
     or c
     jr nz, screenfill_nonzero
-    pop de
-    pop bc
     pop af
     ret
     
 screenfill_nonzero:
+    push bc
+    push de
     ; map framebuffer bank
     ld a, d
     rlca
     rlca
     rlca
     and 7
-    ld c, a
-    ld b, 0
+
     ld hl, framebufferpage
-    add hl, bc
-    ld a, (hl)
+    add a, (hl)
     nextreg NEXTREG_MMU3, a
     
     ; calculate max span
@@ -111,11 +107,12 @@ screenfill_nonzerofromfile:
     rlca
     rlca
     and 7
-    ld c, a
-    ld b, 0
+    cp 6
+    ret z
+    cp 7
+    ret z
     ld hl, framebufferpage
-    add hl, bc
-    ld a, (hl)
+    add a, (hl)
     nextreg NEXTREG_MMU3, a
     
     ; calculate max span
