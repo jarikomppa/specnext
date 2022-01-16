@@ -146,6 +146,7 @@ realstart:
     in a, (c)
     add a, a
     ld (framebufferpage), a
+    ld (rendertarget), a
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
     out (c), a
@@ -156,6 +157,7 @@ realstart:
     
     ld a, 2
     ld (framebuffers), a
+
 
     ; TODO: allocate more backbuffers
 
@@ -182,7 +184,6 @@ realstart:
     nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
     nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
 
-
 ; read rest of header
 
     call readword
@@ -195,6 +196,7 @@ realstart:
     ld hl, SCRATCH
     ld bc, 512
     call read
+
 
 ; set palette
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
@@ -213,23 +215,33 @@ pal_loop2:
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
     djnz pal_loop2
 
-
-/*
-    nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
-    ld b, 0
-pal_loop:
-    ld a, b
-    nextreg NEXTREG_PALETTE_VALUE, a
-    djnz pal_loop
-*/  
-
 ; ready for animation loop
 
-    ld a, (frames)
-    ld b, a
+    ld bc, (frames)
     ei
 animloop:
     push bc
+
+    ld a, (framebuffers)
+    ld e, a
+    ld a, (renderpage)
+    inc a
+    cp e
+    jr nz, notrollover
+    ld a, 0
+notrollover:
+    ld (renderpage), a
+    ld e, a
+    ld hl, framebufferpage
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, (hl)
+    ld (rendertarget), a
+wait:
+    ld a, (showpage)
+    cp e
+    jr z, wait ; wait for the isr to progress
 
     call readbyte
     push af
@@ -269,9 +281,14 @@ animloop:
     jp z, FLI_COPY
     jp UNKNOWN
 blockdone:
-    ;halt
+    ; advance the readypage so it can be shown
+    ld a, (renderpage)
+    ld (readypage), a
     pop bc
-    djnz animloop
+    dec bc
+    ld a, b
+    or c
+    jp nz, animloop
 
 fail:
 
@@ -343,6 +360,50 @@ allocfail:
     ret ; exit application
 
 isr:
+    push af
+    push de
+    push hl
+    push bc
+    
+    ; Wait for N frames
+    ld bc, (speed)
+    ld a, (framewaits)
+    inc a
+    cp c
+    jr z, isr_nodelay
+    ld (framewaits), a
+    jp isr_notready
+isr_nodelay:
+    ld a, 0
+    ld (framewaits), a
+
+    ; If we can, advance to the next frame.
+    ld a, (readypage)
+    ld e, a
+    ld a, (framebuffers)
+    ld d, a
+    ld a, (showpage)
+    cp a, e
+    jr z, isr_notready
+    inc a
+    cp a, d
+    jr nz, isr_notrollover
+    ld a, 0
+isr_notrollover:
+    ld (showpage), a
+    ld d, 0
+    ld e, a
+    ld hl, framebufferpage
+    add hl, de
+    ld a, (hl)
+    srl a ; 16k pages
+    nextreg NEXTREG_LAYER2_RAMPAGE, a
+
+isr_notready:
+    pop bc
+    pop hl
+    pop de
+    pop af
     ei
     reti
 
@@ -354,6 +415,8 @@ frames:
     db 0,0
 speed:
     db 0,0
+framewaits:
+    db 0
 regstore:
     BLOCK 32, 0 ; currently 14 used
 filepage:
@@ -366,8 +429,17 @@ framebuffers:
     db 0
 framebufferpage:
     BLOCK 64, 0
+rendertarget:
+    db 0
+renderpage:
+    db 0
+readypage:
+    db 0
+showpage:
+    db 0
 spstore:
     db 0,0
+
 
 fn:
     db "/flx/cube1_lrle8.flx", 0

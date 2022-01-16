@@ -72,7 +72,7 @@ screenfill_nonzero:
     rlca
     and 7
 
-    ld hl, framebufferpage
+    ld hl, rendertarget
     add a, (hl)
     nextreg NEXTREG_MMU3, a
     
@@ -162,7 +162,7 @@ screenfill_nonzerofromfile:
     ret z
     cp 7
     ret z
-    ld hl, framebufferpage
+    ld hl, rendertarget
     add a, (hl)
     nextreg NEXTREG_MMU3, a
     
