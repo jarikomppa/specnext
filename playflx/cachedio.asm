@@ -50,7 +50,8 @@ oklen:
     push hl
     push bc
     ld hl, (fileindex)
-    ldir ; [de]=[hl], de++, hl++, bc--
+    ;ldir ; [de]=[hl], de++, hl++, bc--
+    call memcpy
     pop bc
     ld hl, (fileindex)
     add hl, bc

@@ -1,3 +1,51 @@
+; de dest
+; hl src
+; bc bytes
+memcpy:
+    push hl
+    ld hl, 20
+    sbc hl, bc
+    jr c, dma_memcpy
+    pop hl
+    ldir
+    ret
+dma_memcpy:
+    pop hl
+    push de
+    push bc
+    push hl
+    ld bc, PORT_DATAGEAR_DMA
+    ld a, 0x83; // DMA_DISABLE
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
+    out (PORT_DATAGEAR_DMA), a
+    pop hl
+    out (c), l ; source
+    out (c), h ; source
+    pop hl
+    out (c), l ; count
+    out (c), h ; count
+    ld a, 0b01010100; // R1-write A time byte, increment, to memory, bitmask
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b00000010; // 2t
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b01010000; // R2-write B time byte, increment, to memory, bitmask
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b00000010; // R2-Cycle length port B
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b10101101; // R4-Continuous mode (use this for block transfer), write dest adress
+    out (PORT_DATAGEAR_DMA), a
+    pop hl
+    out (c), l ; dest
+    out (c), h ; dest
+    ld a, 0b10000010; // R5-Restart on end of block, RDY active LOW
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0b11001111; // R6-Load
+    out (PORT_DATAGEAR_DMA), a
+    ld a, 0x87;       // R6-Enable DMA
+    out (PORT_DATAGEAR_DMA), a
+    ret
+
 
 ; de = screen offset
 ; bc = bytes to fill
@@ -35,8 +83,6 @@ screenfill_nonzero:
     sbc hl, de    
     ; hl = max span
     pop de
-    pop bc
-    push bc
     push de
     push hl
     sbc hl, bc   
@@ -72,13 +118,15 @@ okspan:
     ld a, b
     or c
     jr z, skipcopy
-    ldir ; (de)=(hl), de++, hl++, bc--
+    ;ldir ; (de)=(hl), de++, hl++, bc--
+    call memcpy
 skipcopy:
     pop af
     pop hl
     pop bc
     pop de
     sbc hl, bc
+    ; hl = remaining bytes, bc = bytes just processed, a = color
     ret z ; all bytes filled
     ex de, hl  ;
     add hl, bc ; add de, bc - increment screen offset
