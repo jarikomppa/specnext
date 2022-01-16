@@ -52,6 +52,7 @@ SCRATCH EQU 0x8000
     rst     0x8
     .db     0x94                   ; +3dos call
     jp nc, allocfail-DOTDIFF        ; in case of failure, do a clean exit
+    ld a, e
 
     push af
     nextreg NEXTREG_MMU6, a        ; use the newly allocated page
@@ -74,9 +75,6 @@ SCRATCH EQU 0x8000
     jp realstart
 realstart:
 
-    ;call printbyte
-    ;jp teardown-DOTDIFF
-
     STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
 
@@ -90,7 +88,6 @@ realstart:
 
     STORENEXTREG NEXTREG_MMU3, regstore + 1
     STORENEXTREG NEXTREG_MMU5, regstore + 2
-    STORENEXTREG NEXTREG_MMU6, regstore + 3
     STORENEXTREG NEXTREG_MMU7, regstore + 4
     STORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
     STORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
@@ -292,7 +289,6 @@ fail:
 
     RESTORENEXTREG NEXTREG_MMU3, regstore + 1
     RESTORENEXTREG NEXTREG_MMU5, regstore + 2
-    RESTORENEXTREG NEXTREG_MMU6, regstore + 3
     RESTORENEXTREG NEXTREG_MMU7, regstore + 4
     RESTORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
     RESTORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
@@ -318,6 +314,7 @@ fail:
 teardown:
     ld sp, (spstore-DOTDIFF)
     pop af
+    ld e, a
     ld      hl, 0x0003 ; free zx memory
     exx                             ; place parameters in alternates
     ld      de, 0x01bd             ; IDE_BANK
