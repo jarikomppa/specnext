@@ -327,6 +327,16 @@ blockdone:
     or c
     jp nz, animloop
 
+    ; Done with decoding, wait for frames to show
+
+    ld a, (readypage)
+    ld e, a
+waitforfinish:
+    ld a, (showpage)
+    cp e
+    jr nz, waitforfinish ; wait for the isr to progress
+
+
 fail:
 
     di
