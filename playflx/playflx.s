@@ -147,6 +147,7 @@ realstart:
     add a, a
     ld (framebufferpage), a
     ld (rendertarget), a
+    ld (previousframe), a
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
     out (c), a
@@ -189,12 +190,12 @@ reservefail:
     jr nz, noframebuffer ; failed to allocate at least 1 of 6 pages, no twinkie
     ld a, (SCRATCH+100) ; put the first page of the framebuffer to table
     ld (ix), a
-    call printbyte
+    ;call printbyte
     inc ix
     ld a, (framebuffers) ; increase number of framebuffers
     inc a
     ld (framebuffers), a
-    call printbyte
+    ;call printbyte
 noframebuffer:    
     pop bc
     djnz nextframebuffer
@@ -283,7 +284,7 @@ wait:
     jr z, wait ; wait for the isr to progress
 
     call readbyte
-    ;call printbyte
+    call printbyte
     cp 13
     jp z, LZ1B
     cp 10
@@ -321,6 +322,8 @@ blockdone:
     ; advance the readypage so it can be shown
     ld a, (renderpage)
     ld (readypage), a
+    ld a, (rendertarget)
+    ld (previousframe), a
     pop bc
     dec bc
     ld a, b
@@ -495,6 +498,8 @@ framebufferpage:
     BLOCK 40, 0
 allocpages:
     BLOCK 256, 0
+previousframe:
+    db 0
 rendertarget:
     db 0
 renderpage:
@@ -508,7 +513,7 @@ spstore:
 
 
 fn:
-    db "/flx/cube1_lrle8.flx", 0
+    db "/flx/cube1_lrle16.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm
