@@ -17,6 +17,7 @@ setupdma:
 memcpy:
     push hl
     ld hl, 20
+    or a
     sbc hl, bc
     jr c, dma_memcpy
     pop hl
@@ -86,11 +87,13 @@ screenfill_nonzero:
     and 0x1f ; mask to 8k
     ld d, a
     ld hl, 0x2000
+    or a
     sbc hl, de    
     ; hl = max span
     pop de
     push de
     push hl
+    or a
     sbc hl, bc   
     jr nc, okspan
     pop bc  ; bc = max span
@@ -131,8 +134,9 @@ skipcopy:
     pop hl
     pop bc
     pop de
+    or a
     sbc hl, bc
-    ; hl = remaining bytes, bc = bytes just processed, a = color
+    ; de = screen offset, hl = remaining bytes, bc = bytes just processed, a = color
     ret z ; all bytes filled
     ex de, hl  ;
     add hl, bc ; add de, bc - increment screen offset
@@ -177,6 +181,7 @@ screenfill_nonzerofromfile:
     and 0x1f ; mask to 8k
     ld d, a
     ld hl, 0x2000
+    or a
     sbc hl, de    
     ; hl = max span
     pop de
@@ -184,6 +189,7 @@ screenfill_nonzerofromfile:
     push bc
     push de
     push hl
+    or a
     sbc hl, bc   
     jr nc, okspanfromfile
     pop bc  ; bc = max span
@@ -209,6 +215,7 @@ okspanfromfile:
     pop hl
     pop bc
     pop de
+    or a
     sbc hl, bc
     ret z ; all bytes filled
     ex de, hl  ;
@@ -258,6 +265,7 @@ screenfill_nonzerofromprevframe:
     and 0x1f ; mask to 8k
     ld d, a
     ld hl, 0x2000
+    or a
     sbc hl, de    
     ; hl = max span
     pop de
@@ -265,6 +273,7 @@ screenfill_nonzerofromprevframe:
     push bc
     push de
     push hl
+    or a
     sbc hl, bc   
     jr nc, okspanfromprevframe
     pop bc  ; bc = max span
@@ -290,6 +299,7 @@ okspanfromprevframe:
     pop hl
     pop bc
     pop de
+    or a
     sbc hl, bc
     ret z ; all bytes filled
     ex de, hl  ;
@@ -300,18 +310,20 @@ okspanfromprevframe:
     jp screencopyfromprevframe ; let's go again
 
 
-; hl = target
+; hl = target address
 ; bc = bytes
 ; ix = source offset
 readprevframe:
     ld a, b
     or c
     ret z ; If trying to copy 0 bytes, just return
+    push bc
     push hl
     push ix
     pop de
     pop ix
     push de
+    ; de = source offset, ix = target, stack = source offset
     ; map previous frame bank
     ld a, d
     rlca
@@ -333,6 +345,7 @@ readprevframe:
     and 0x1f ; mask to 8k
     ld d, a
     ld hl, 0x2000
+    or a
     sbc hl, de    
     ; hl = max span
     pop de
@@ -340,6 +353,7 @@ readprevframe:
     push bc
     push de
     push hl
+    or a
     sbc hl, bc   
     jr nc, okspanreadprevframe
     pop bc  ; bc = max span
@@ -370,6 +384,7 @@ okspanreadprevframe:
     pop hl
     pop bc
     pop de
+    or a
     sbc hl, bc
     ret z ; all bytes filled
     ex de, hl  ;

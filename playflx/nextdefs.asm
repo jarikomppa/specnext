@@ -22,6 +22,36 @@
         ld (addr), a
     ENDM
 
+    MACRO PUSHALL
+		push af
+		push bc
+		push de
+		push hl
+		push ix
+		push iy
+		ex af, af'
+		exx
+		push af
+		push bc
+		push de
+		push hl
+    ENDM
+
+    MACRO POPALL
+		pop hl
+		pop de
+		pop bc
+		pop af
+		exx
+		ex af,af'
+		pop iy
+		pop ix
+		pop hl
+		pop de
+		pop bc
+		pop af
+    ENDM
+
 PORT_ULA_CONTROL EQU 0xfe
 PORT_KEMPSTON1 EQU 0x1f
 PORT_KEMPSTON2 EQU 0x37

@@ -237,7 +237,6 @@ noframebuffer:
     ld bc, 512
     call read
 
-
 ; set palette
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld hl, SCRATCH
@@ -427,10 +426,11 @@ allocfail:
     ret ; exit application
 
 isr:
-    push af
-    push de
-    push hl
-    push bc
+    PUSHALL
+;    push af
+;    push de
+;    push hl
+;    push bc
     
     ; Wait for N frames
     ld bc, (speed)
@@ -467,10 +467,11 @@ isr_notrollover:
     nextreg NEXTREG_LAYER2_RAMPAGE, a
 
 isr_notready:
-    pop bc
-    pop hl
-    pop de
-    pop af
+;    pop bc
+;    pop hl
+;    pop de
+;    pop af
+    POPALL
     ei
     reti
 
@@ -513,7 +514,7 @@ spstore:
 
 
 fn:
-    db "/flx/cube1_lrle16.flx", 0
+    db "/flx/cube1_ld8.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm

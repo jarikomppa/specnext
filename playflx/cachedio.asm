@@ -4,6 +4,7 @@ readbyte:
     push bc
     ld hl, 8192 + 0xa000
     ld bc, (fileindex)
+    or a    
     sbc hl, bc
     call z, nextfileblock
     ld hl, (fileindex)
@@ -29,6 +30,7 @@ read:
     push bc
     ld hl, 8192 + 0xa000
     ld bc, (fileindex)
+    or a
     sbc hl, bc
     jr nz, doread
     call nextfileblock
@@ -38,6 +40,7 @@ doread:
     pop bc  ; desired copy length
     push bc
     push hl
+    or a
     sbc hl, bc
     jr nc, oklen
     pop bc   ; max len
@@ -57,6 +60,7 @@ oklen:
     add hl, bc
     ld (fileindex), hl
     pop hl
+    or a
     sbc hl, bc
     ret z      ; If byte count is zero, we're done
     ld bc, hl  ; fake-ok
@@ -69,6 +73,7 @@ skipbytes:
     push bc
     ld hl, 8192 + 0xa000
     ld bc, (fileindex)
+    or a
     sbc hl, bc
     jr nz, doskip
     call nextfileblock
@@ -78,6 +83,7 @@ doskip:
     pop bc  ; desired copy length
     push bc
     push hl
+    or a
     sbc hl, bc
     jr nc, skip_oklen
     pop bc   ; max len
@@ -91,6 +97,7 @@ skip_oklen:
     add hl, bc
     ld (fileindex), hl
     pop hl
+    or a
     sbc hl, bc
     ret z      ; If byte count is zero, we're done
     ld bc, hl  ; fake-ok
