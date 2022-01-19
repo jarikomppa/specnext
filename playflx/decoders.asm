@@ -217,8 +217,7 @@ copyprevLD8_a:
     ld c, a
     push bc
     push de
-    ;call screenfill
-    ld hl, de ; fake-ok
+    ld ix, de ; fake-ok
     call screencopyfromprevframe
     pop de
     pop bc
@@ -241,8 +240,7 @@ copyprevLD8_b:
     ld c, a
     push bc
     push de
-    ;call screenfill
-    ld hl, de ; fake-ok
+    ld ix, de ; fake-ok
     call screencopyfromprevframe
     pop de
     pop bc
@@ -259,6 +257,146 @@ copyprevLD8_b:
     jp tickLD8
 
 
+; ------------------------------------------------------------------------
+LINEARDELTA16: ;chunktype = 105; printf("E"); break;
+; op >= 0: [op][runbyte]   - run op bytes, if 127, read 2 more bytes for run length
+; op <  0: [-op]           - copy -op bytes from prevframe, if -128, read 2 more bytes for run length
+; op >  0: [op][..bytes..] - copy op bytes from file
+; op <= 0: [-op]           - copy -op bytes from prevframe, if -128, read 2 more bytes for run length
+    call readword ; hl = bytes in block
+    ld de, 0 ; screen offset
+tickLD16:
+    push hl
+
+    call readbyte
+    or a
+    jp m, copyprevLD16_a
+; op >= 0: [op][runbyte]   - run op bytes, if 127, read 2 more bytes for run length
+    cp 127
+    jr z, golongrunLD16
+    ld b, 0
+    ld c, a
+    jr gorunLD16
+golongrunLD16:
+    pop hl
+    dec hl
+    dec hl
+    push hl
+    call readword
+    ld bc, hl ; fake-ok
+gorunLD16:    
+    call readbyte
+    push de
+    push bc
+    call screenfill
+    pop bc
+    pop de
+    
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
+
+    pop hl
+    dec hl
+    dec hl
+    ld a, h
+    or a, l
+    jp z, blockdone
+tockLD16:
+    push hl
+    call readbyte
+    or a
+    jp m, copyprevLD16_b    
+; op >  0: [op][..bytes..] - copy op bytes from file    
+    ld b, 0
+    ld c, a
+    push de
+    push bc
+    call screencopyfromfile
+    pop bc
+    pop de
+
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
+
+    pop hl
+    dec hl
+    or a ; clear carry
+    sbc hl, bc
+    ld a, h
+    or a, l
+    jp z, blockdone
+    jr tickLD16
+
+copyprevLD16_a:
+; op <  0: [-op]           - copy -op bytes from prevframe, if -128, read 2 more bytes for run length
+    cp -128
+    jr z, longcopyLD16a    
+    neg
+    ld b, 0
+    ld c, a
+    jr docopyLD16a
+longcopyLD16a:
+    pop hl
+    dec hl
+    dec hl
+    push hl
+    call readword
+    ld bc, hl      ; fake-ok  
+docopyLD16a:    
+    push bc
+    push de
+    ld ix, de ; fake-ok
+    call screencopyfromprevframe
+    pop de
+    pop bc
+
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
+
+    pop hl
+    dec hl
+    ld a, h
+    or a, l
+    jp z, blockdone
+    jr tockLD16
+
+copyprevLD16_b:
+; op <  0: [-op]           - copy -op bytes from prevframe, if -128, read 2 more bytes for run length
+    cp -128
+    jr z, longcopyLD16b
+    neg
+    ld b, 0
+    ld c, a
+    jr docopyLD16b
+longcopyLD16b:
+    pop hl
+    dec hl
+    dec hl
+    push hl
+    call readword
+    ld bc, hl      ; fake-ok  
+docopyLD16b:    
+    push bc
+    push de
+    ld ix, de ; fake-ok
+    call screencopyfromprevframe
+    pop de
+    pop bc
+
+    ex de, hl  ;
+    add hl, bc ; add de, bc
+    ex de, hl  ;
+
+    pop hl
+    dec hl
+    ld a, h
+    or a, l
+    jp z, blockdone
+    jp tickLD16
+
 
 
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;
@@ -268,7 +406,6 @@ DELTA8FRAME: ;chunktype = 12; printf("d"); break;
 DELTA16FRAME: ;chunktype = 7;  printf("D"); break;
 FLI_COPY: ;chunktype = 16; printf("c"); break;
 ONECOLOR: ;chunktype = 101;  printf("o"); break;
-LINEARDELTA16: ;chunktype = 105; printf("E"); break;
 LZ1: ;chunktype = 106; printf("1"); break;
 LZ2: ;chunktype = 107; printf("2"); break;
 LZ3: ;chunktype = 108; printf("3"); break;

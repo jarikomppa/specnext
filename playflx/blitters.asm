@@ -228,11 +228,9 @@ okspanfromfile:
 ; ------------------------------------------------------------------------
 
 ; de = screen offset
-; hl = prevframe offset
 ; bc = bytes to fill
+; ix = prevframe offset
 screencopyfromprevframe:
-    push hl
-    pop ix
     push bc
     push de
     ; check if we're filling zero bytes
@@ -295,7 +293,9 @@ okspanfromprevframe:
     ld d, a
     ld hl, 0x6000 ; mmu3
     add hl, de
+    push ix
     call readprevframe
+    pop ix
     pop hl
     pop bc
     pop de
@@ -307,6 +307,9 @@ okspanfromprevframe:
     ex de, hl  ;
     add ix, bc ; 
     ld bc, hl  ; fake-ok - remaining bytes
+; de = screen offset
+; bc = bytes to fill
+; ix = prevframe offset
     jp screencopyfromprevframe ; let's go again
 
 
@@ -323,7 +326,7 @@ readprevframe:
     pop de
     pop ix
     push de
-    ; de = source offset, ix = target, stack = source offset
+    ; de = source offset, ix = target, stack = source offset, bytes
     ; map previous frame bank
     ld a, d
     rlca
@@ -363,7 +366,7 @@ okspanreadprevframe:
     pop de
     pop hl ; original byte count    
 
-    ; now bc = count, hl = original count, de = screen ofs
+    ; now bc = count, hl = original count, de = source ofs, ix = dest address
 
     push de
     push bc
@@ -387,13 +390,19 @@ okspanreadprevframe:
     or a
     sbc hl, bc
     ret z ; all bytes filled
+
+    ; ix = destination address, hl = remaining bytes, bc = bytes just processed, de = source ofs
+
     ex de, hl  ;
-    add hl, bc ; add de, bc - increment screen offset
+    add hl, bc ; add de, bc - increment source offset
     ex de, hl  ;
-    add ix, bc ; 
+    add ix, bc ; increment dest address
     ld bc, hl  ; fake-ok - remaining bytes
     push ix
-    push hl
+    push de
     pop ix
     pop hl
-    jp screencopyfromprevframe ; let's go again
+; hl = target address
+; bc = bytes
+; ix = source offset
+    jp readprevframe ; let's go again

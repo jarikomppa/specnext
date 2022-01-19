@@ -514,7 +514,7 @@ spstore:
 
 
 fn:
-    db "/flx/cube1_ld8.flx", 0
+    db "/flx/output.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm
