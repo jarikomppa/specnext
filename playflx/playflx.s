@@ -284,13 +284,29 @@ wait:
 
     call readbyte
     call printbyte
+    cp 18
+    jp z, LZ5
+    cp 17
+    jp z, LZ4
     cp 13
     jp z, LZ1B
+    cp 19
+    jp z, LZ5
+    cp 21
+    jp z, LZ3C
+    cp 1
+    jp z, SAMEFRAME
+    cp 2
+    jp z, BLACKFRAME
+    cp 7
+    jp z, ONECOLOR
+
+/*
     cp 10
-    jp z, LINEARDELTA8
-    cp 16
     jp z, LZ3
     cp 11
+    jp z, LINEARDELTA8
+    cp 16
     jp z, LINEARDELTA16
     cp 15
     jp z, LZ2B
@@ -300,12 +316,6 @@ wait:
     jp z, LZ1
     cp 8
     jp z, LINEARRLE8
-    cp 1
-    jp z, SAMEFRAME
-    cp 2
-    jp z, BLACKFRAME
-    cp 7
-    jp z, ONECOLOR
     cp 9
     jp z, LINEARRLE16
     cp 3
@@ -316,6 +326,7 @@ wait:
     jp z, DELTA16FRAME
     cp 6
     jp z, FLI_COPY
+*/    
     jp UNKNOWN
 blockdone:
     ; advance the readypage so it can be shown
