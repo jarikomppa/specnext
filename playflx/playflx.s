@@ -291,7 +291,7 @@ wait:
     cp 13
     jp z, LZ1B
     cp 19
-    jp z, LZ5
+    jp z, LZ6
     cp 21
     jp z, LZ3C
     cp 1

@@ -157,9 +157,9 @@ docopyprevLZ4:
 
 ; ------------------------------------------------------------------------
 LZ5:
-; op < 0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
-; op >=0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from current frame
-; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
+; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
+; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from previous frame
+; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from previous frame
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     call readword ; hl = bytes in block
     ld de, 0 ; screen offset
@@ -169,7 +169,7 @@ tickLZ5:
     or a
     jp m, rleLZ5
     jp z, rleLZ5
-; len >  0 [len][16bit offset] or [127][16 bit len][16 bit offset]
+; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from previous frame
     cp 127
     jr z, longcopyprevLZ5_a    
     ld b, 0
@@ -208,9 +208,20 @@ tockLZ5:
     call readbyte
     or a
     jp m, copyprevLZ5_b
-; len >= 0 [len][len bytes] to copy
+; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from previous frame
+    cp 127
+    jr z, longcopyfromfileLZ5
     ld b, 0
     ld c, a
+    jr docopyfromfileLZ5
+longcopyfromfileLZ5:
+    pop hl
+    dec hl
+    dec hl
+    push hl
+    call readword
+    ld bc, hl ; fake-ok
+docopyfromfileLZ5:    
     push bc
     push de
     call screencopyfromfile
@@ -231,7 +242,7 @@ tockLZ5:
     jp tickLZ5
 
 rleLZ5:
-; len <= 0 [-len][run byte] or [-128][16 bit len][run byte]
+; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
     jr z, longrleLZ5
     neg
@@ -266,7 +277,7 @@ dorleLZ5:
     jr tockLZ5
 
 copyprevLZ5_b:    
-; len <  0 [-len][16bit offset] or [-128][16 bit len][16 bit offset]
+; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from previous frame
     cp -128
     jr z, longcopyprevLZ5
     neg
@@ -356,8 +367,19 @@ tockLZ6:
     or a
     jp m, copyprevLZ6_b
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
+    cp 127
+    jr z, longcopyfromfileLZ6
     ld b, 0
     ld c, a
+    jr docopyfromfileLZ6
+longcopyfromfileLZ6:
+    pop hl
+    dec hl
+    dec hl
+    push hl
+    call readword
+    ld bc, hl ; fake-ok
+docopyfromfileLZ6:    
     push bc
     push de
     call screencopyfromfile
@@ -410,7 +432,7 @@ dorleLZ6:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tockLZ5
+    jp tockLZ6
 
 copyprevLZ6_b:    
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
