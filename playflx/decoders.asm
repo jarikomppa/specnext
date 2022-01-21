@@ -316,7 +316,7 @@ tickLZ6:
     or a
     jp m, rleLZ6
     jp z, rleLZ6
-; len >  0 [len][16bit offset] or [127][16 bit len][16 bit offset]
+; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from previous frame
     cp 127
     jr z, longcopyprevLZ6_a    
     ld b, 0
@@ -355,7 +355,7 @@ tockLZ6:
     call readbyte
     or a
     jp m, copyprevLZ6_b
-; len >= 0 [len][len bytes] to copy
+; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     ld b, 0
     ld c, a
     push bc
@@ -378,7 +378,7 @@ tockLZ6:
     jp tickLZ6
 
 rleLZ6:
-; len <= 0 [-len][run byte] or [-128][16 bit len][run byte]
+; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
     jr z, longrleLZ6
     neg
@@ -413,7 +413,7 @@ dorleLZ6:
     jp tockLZ5
 
 copyprevLZ6_b:    
-; len <  0 [-len][16bit offset] or [-128][16 bit len][16 bit offset]
+; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
     cp -128
     jr z, longcopyprevLZ6_b
     neg
@@ -461,7 +461,7 @@ docopyprevLZ6_b:
     jp tickLZ6
 
 ; ------------------------------------------------------------------------
-LZ1B: ;chunktype = 109; printf("4"); break;
+LZ1B:
 ; op  > 0 [op][16 bit ofs] copy from previous
 ; op <= 0 [-op][run byte] 
 ; op >= 0 [op][.. op bytes ..]
@@ -602,9 +602,21 @@ longcopyprevLZ3c_a:
     call readword
     ld bc, hl ; fake-ok
 docopyprevLZ3c_a:
-    call readword
+    call readbyte ; +/- offset
     push bc
     push de
+
+    ex hl, de ; hl = offset
+    ld e, a  ; sign extend a -> de
+    add a, a ;
+    sbc a, a ;
+    ld d, a  ;
+    
+    add hl, de
+
+    pop de   ; restore de = offset
+    push de
+
     ld ix, hl ; fake-ok
     call screencopyfromprevframe
     pop de
@@ -615,7 +627,6 @@ docopyprevLZ3c_a:
     ex de, hl  ;
 
     pop hl
-    dec hl
     dec hl
     dec hl
     ld a, h
@@ -631,7 +642,6 @@ tockLZ3c:
 ; op >  0 [127][2 byte len] or [op][current ofs +/- signed byte] copy from previous
     cp 127
     jr z, longcopyprevLZ3c_b
-    neg
     ld c, a
     ld b, 0
     jr docopyprevLZ3c_b
@@ -644,10 +654,22 @@ longcopyprevLZ3c_b
     ld bc, hl ; fake-ok
 docopyprevLZ3c_b:
 
-    call readword
+    call readbyte ; +/- offset
     push bc
     push de
+
+    ex hl, de
+    ld e, a  ; sign extend a -> de
+    add a, a ;
+    sbc a, a ;
+    ld d, a  ;
+
+    add hl, de    
     ld ix, hl ; fake-ok
+
+    pop de
+    push de
+
     call screencopyfromprevframe
     pop de
     pop bc
@@ -657,7 +679,6 @@ docopyprevLZ3c_b:
     ex de, hl  ;
 
     pop hl
-    dec hl
     dec hl
     dec hl
     ld a, h
