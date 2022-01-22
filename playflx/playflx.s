@@ -263,6 +263,7 @@ pal_loop2:
 animloop:
     push bc
 
+
     ld a, (framebuffers)
     ld e, a
     ld a, (renderpageidx)
@@ -279,12 +280,21 @@ notrollover:
     add hl, bc
     ld a, (hl)
     ld (rendertarget), a
+
     ;call printbyte
 wait:
     ;call isrc
     ld a, (showpageidx)
     cp e       ; if showpageidx == renderpageidx
     jr z, wait ; wait for the isr to progress
+
+;    PUSHALL
+;    ; TODO: remember to remove this clear
+;    ld de, 0
+;    ld bc, 256*192
+;    ld a, 1
+;    call screenfill 
+;    POPALL
 
     call readbyte
     ;call printbyte
@@ -431,9 +441,6 @@ isr:
     ld (framewaits), a
     jp isr_notready
 isr_nodelay:
-    ld a, 0
-    ld (framewaits), a
-
     ; If we can, advance to the next frame.
     ld a, (readypageidx)
     ld e, a
@@ -457,6 +464,10 @@ isr_notrollover:
     srl a ; 16k pages
     ;call printbyte
     nextreg NEXTREG_LAYER2_RAMPAGE, a
+
+    ; Clear frame waits here (so if frame wasn't realy we'll show it ASAP)
+    ld a, 0
+    ld (framewaits), a
 
 isr_notready:
 
@@ -503,8 +514,8 @@ spstore:
 
 
 fn:
-    db "/flx/output.flx", 0
-;    db "/flx/sk.flx", 0
+;    db "/flx/output.flx", 0
+    db "/flx/cube.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm

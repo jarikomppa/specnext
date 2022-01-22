@@ -52,10 +52,14 @@ oklen:
     ; now de = dest, bc = byte count, hl = original byte count
     push hl
     push bc
+    push de
     ld hl, (fileindex)
     ;ldir ; [de]=[hl], de++, hl++, bc--
     call memcpy
+    pop hl
     pop bc
+    add hl, bc
+    ex de, hl 
     ld hl, (fileindex)
     add hl, bc
     ld (fileindex), hl
@@ -63,8 +67,11 @@ oklen:
     or a
     sbc hl, bc
     ret z      ; If byte count is zero, we're done
-    ld bc, hl  ; fake-ok
-    ld hl, de  ; fake-ok
+
+    ld bc, hl  ; fake-ok - remaining bytes
+    
+    ld hl, de  ; fake-ok - destination address
+    
     jp read    ; Go again
 
 

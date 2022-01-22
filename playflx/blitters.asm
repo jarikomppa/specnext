@@ -138,10 +138,13 @@ skipcopy:
     sbc hl, bc
     ; de = screen offset, hl = remaining bytes, bc = bytes just processed, a = color
     ret z ; all bytes filled
+
     ex de, hl  ;
     add hl, bc ; add de, bc - increment screen offset
     ex de, hl  ;
+
     ld bc, hl  ; fake-ok - remaining bytes
+
     jp screenfill ; let's go again
 
 ; ------------------------------------------------------------------------
@@ -166,10 +169,6 @@ screenfill_nonzerofromfile:
     rlca
     rlca
     and 7
-    cp 6
-    ret z
-    cp 7
-    ret z
     ld hl, rendertarget
     add a, (hl)
     nextreg NEXTREG_MMU3, a
@@ -218,10 +217,13 @@ okspanfromfile:
     or a
     sbc hl, bc
     ret z ; all bytes filled
+
     ex de, hl  ;
     add hl, bc ; add de, bc - increment screen offset
     ex de, hl  ;
+
     ld bc, hl  ; fake-ok - remaining bytes
+    
     jp screencopyfromfile ; let's go again
 
 
@@ -229,7 +231,7 @@ okspanfromfile:
 
 ; de = screen offset
 ; bc = bytes to fill
-; ix = prevframe offset
+; ix = prev frame offset
 screencopyfromprevframe:
     push bc
     push de
@@ -248,10 +250,6 @@ screenfill_nonzerofromprevframe:
     rlca
     rlca
     and 7
-    cp 6
-    ret z
-    cp 7
-    ret z
     ld hl, rendertarget
     add a, (hl)
     nextreg NEXTREG_MMU3, a
@@ -302,48 +300,45 @@ okspanfromprevframe:
     or a
     sbc hl, bc
     ret z ; all bytes filled
+
     ex de, hl  ;
     add hl, bc ; add de, bc - increment screen offset
     ex de, hl  ;
-    add ix, bc ; 
-    ld bc, hl  ; fake-ok - remaining bytes
-; de = screen offset
-; bc = bytes to fill
-; ix = prevframe offset
-    jp screencopyfromprevframe ; let's go again
 
+    add ix, bc
+
+    ld bc, hl  ; fake-ok - remaining bytes
+    
+    jp screencopyfromprevframe ; let's go again
 
 ; hl = target address
 ; bc = bytes
 ; ix = source offset
 readprevframe:
+    ; check if we're filling zero bytes
     ld a, b
     or c
-    ret z ; If trying to copy 0 bytes, just return
-    push bc
-    push hl
-    push ix
-    pop de
-    pop ix
-    push de
-    ; de = source offset, ix = target, stack = source offset, bytes
-    ; map previous frame bank
+    jr nz, screenfill_nonzeroreadprevframe
+    ret
+    
+screenfill_nonzeroreadprevframe:
+    push hl ; stack: target addr
+    push bc ; stack: bytecount, target address
+    push ix 
+    pop de  
+    ; map framebuffer bank
     ld a, d
     rlca
     rlca
     rlca
     and 7
-    cp 6
-    ret z
-    cp 7
-    ret z
     ld hl, previousframe
     add a, (hl)
-    nextreg NEXTREG_MMU5, a    ; We're using same bank as file i/o, so remember to return it
-
+    nextreg NEXTREG_MMU5, a
+    
     ; calculate max span
+    push ix
     pop de
-    push de
     ld a, d
     and 0x1f ; mask to 8k
     ld d, a
@@ -351,57 +346,52 @@ readprevframe:
     or a
     sbc hl, de    
     ; hl = max span
-    pop de
-    pop bc
+    pop bc  ; stack: target address
     push bc
-    push de
-    push hl
+    push hl ; stack: maxspan, bytecount, targetaddr
     or a
     sbc hl, bc   
     jr nc, okspanreadprevframe
-    pop bc  ; bc = max span
-    push bc
+    pop bc  ; stack: bytecount, targetaddr
+    push bc ; stack: maxspan, bytecount, targetaddr
 okspanreadprevframe:    
-    pop hl ; throw-away unused maxspan
-    pop de
-    pop hl ; original byte count    
+    pop hl ; stack: bytecount, targetaddr
+    pop hl ; stack: targetaddr
+    pop af ; stack: -
 
-    ; now bc = count, hl = original count, de = source ofs, ix = dest address
+    ; now bc = count, hl = original count, de = masked prevframe addr 
 
-    push de
     push bc
     push hl
+    push af ; stack = count, origcount, targetaddr
 
-    ; calculate source address
-    ld a, d
-    and 0x1f
-    ld d, a
+    ; calculate output address
     ld hl, 0xa000 ; mmu5
     add hl, de
-    ; hl = source
-    push ix
     pop de
+    push de
+    ; hl = source address
+    ; de = dest address
+    ; bc = count
+
     call memcpy
     ld a, (filepage)
     nextreg NEXTREG_MMU5, a
-    pop hl
-    pop bc
-    pop de
+    pop de ; dest addr
+    pop hl ; origcount
+    pop bc ; count
     or a
     sbc hl, bc
     ret z ; all bytes filled
+;    ret
 
-    ; ix = destination address, hl = remaining bytes, bc = bytes just processed, de = source ofs
+    add ix, bc ; increment source offset
 
-    ex de, hl  ;
-    add hl, bc ; add de, bc - increment source offset
-    ex de, hl  ;
-    add ix, bc ; increment dest address
-    ld bc, hl  ; fake-ok - remaining bytes
-    push ix
-    push de
-    pop ix
-    pop hl
+    ex de, hl  
+    add hl, bc ; increment destination offset
+
+    ld bc, de  ; fake-ok - remaining bytes
+    
 ; hl = target address
 ; bc = bytes
 ; ix = source offset
