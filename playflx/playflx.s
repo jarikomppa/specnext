@@ -2,7 +2,7 @@
 ; PlayFLX
 ; FLX video player
 ; by Jari Komppa, http://iki.fi/sol
-; 2021
+; 2022
     INCLUDE nextdefs.asm
 
 
@@ -139,31 +139,13 @@ realstart:
 
 ; header tag read and apparently fine at this point.
 
-    ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_LAYER2_RAMPAGE
-    out (c), a
-    inc b         ; nextreg i/o
-    in a, (c)
-    add a, a
-    ld (framebufferpage), a
-    ld (rendertarget), a
-    ld (previousframe), a
-    ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_LAYER2_RAMSHADOWPAGE
-    out (c), a
-    inc b         ; nextreg i/o
-    in a, (c)
-    add a, a
-    ld (framebufferpage+1), a
-    
-    ld a, 2
-    ld (framebuffers), a
-
-    ; allocate more framebuffers
-    ld b, 37 ; total framebuffers to try
+    ; allocate framebuffers
+    ld b, 37-5 ; total framebuffers to try
+    ; -5 because specnext 3.01.05 core has a bug and doesn't display the last few. TODO: upgrade to .10
+    ; (curiously, cspect has a very similar issue)
     ld e, 0 ; page; 6 pages per framebuffer (222 pages to reserve)
     ld hl, allocpages
-    ld ix, framebufferpage+2
+    ld ix, framebufferpage
 nextframebuffer:
     push bc
     ld a, e
@@ -187,7 +169,7 @@ reservefail:
     djnz nextframebufferpage
     ld a, c
     cp 6
-    jr nz, noframebuffer ; failed to allocate at least 1 of 6 pages, no twinkie
+    jr nz, noframebuffer ; failed to allocate at least 1 of the 6 pages, no twinkie
     ld a, (SCRATCH+100) ; put the first page of the framebuffer to table
     ld (ix), a
     ;call printbyte
@@ -199,6 +181,24 @@ reservefail:
 noframebuffer:    
     pop bc
     djnz nextframebuffer
+
+    ; make sure we have at least two framebuffers
+    ld a, (framebuffers)
+    cp 2
+    jp c, fail
+
+;    ld a, 29
+;    ld (framebuffers), a
+
+    ; set rendertarget and previous to some legal value
+    ld a, (renderpageidx)
+    ld c, a
+    ld b, 0
+    ld hl, framebufferpage
+    add hl, bc
+    ld a, (hl)
+    ld (rendertarget), a
+    ld (previousframe), a
 
 
     ld de, 0
@@ -256,6 +256,8 @@ pal_loop2:
 
 ; ready for animation loop
 
+; ------------------------------------------------------------------------
+
     ld bc, (frames)
     ei
 animloop:
@@ -263,13 +265,13 @@ animloop:
 
     ld a, (framebuffers)
     ld e, a
-    ld a, (renderpage)
-    inc a
+    ld a, (renderpageidx)
+    inc a              ; renderpageidx++
     cp e
-    jr nz, notrollover
+    jr nz, notrollover ; if renderpageidx == framebuffers
     ld a, 0
 notrollover:
-    ld (renderpage), a
+    ld (renderpageidx), a
     ld e, a
     ld hl, framebufferpage
     ld c, a
@@ -277,13 +279,15 @@ notrollover:
     add hl, bc
     ld a, (hl)
     ld (rendertarget), a
+    ;call printbyte
 wait:
-    ld a, (showpage)
-    cp e
+    ;call isrc
+    ld a, (showpageidx)
+    cp e       ; if showpageidx == renderpageidx
     jr z, wait ; wait for the isr to progress
 
     call readbyte
-    call printbyte
+    ;call printbyte
     cp 18
     jp z, LZ5
     cp 17
@@ -301,51 +305,28 @@ wait:
     cp 7
     jp z, ONECOLOR
 
-/*
-    cp 10
-    jp z, LZ3
-    cp 11
-    jp z, LINEARDELTA8
-    cp 16
-    jp z, LINEARDELTA16
-    cp 15
-    jp z, LZ2B
-    cp 14
-    jp z, LZ2
-    cp 12
-    jp z, LZ1
-    cp 8
-    jp z, LINEARRLE8
-    cp 9
-    jp z, LINEARRLE16
-    cp 3
-    jp z, RLEFRAME
-    cp 4
-    jp z, DELTA8FRAME
-    cp 5
-    jp z, DELTA16FRAME
-    cp 6
-    jp z, FLI_COPY
-*/    
     jp UNKNOWN
 blockdone:
     ; advance the readypage so it can be shown
-    ld a, (renderpage)
-    ld (readypage), a
+    ld a, (renderpageidx)
+    ld (readypageidx), a ; mark current renderpage as ready
     ld a, (rendertarget)
-    ld (previousframe), a
-    pop bc
+    ld (previousframe), a ; current render target is now previous
+    pop bc ; number of frames
     dec bc
     ld a, b
     or c
     jp nz, animloop
 
+; ------------------------------------------------------------------------
+
     ; Done with decoding, wait for frames to show
 
-    ld a, (readypage)
+    ld a, (readypageidx)
     ld e, a
 waitforfinish:
-    ld a, (showpage)
+    ;call isrc
+    ld a, (showpageidx)
     cp e
     jr nz, waitforfinish ; wait for the isr to progress
 
@@ -437,11 +418,9 @@ allocfail:
     ret ; exit application
 
 isr:
+;    reti
+;isrc:
     PUSHALL
-;    push af
-;    push de
-;    push hl
-;    push bc
     
     ; Wait for N frames
     ld bc, (speed)
@@ -456,32 +435,31 @@ isr_nodelay:
     ld (framewaits), a
 
     ; If we can, advance to the next frame.
-    ld a, (readypage)
+    ld a, (readypageidx)
     ld e, a
     ld a, (framebuffers)
     ld d, a
-    ld a, (showpage)
+    ld a, (showpageidx)
     cp a, e
-    jr z, isr_notready
-    inc a
+    jr z, isr_notready ; if showpageidx == readypageidx 
+    inc a              ; showpageidx++
     cp a, d
-    jr nz, isr_notrollover
+    jr nz, isr_notrollover ; if showpageidx != framebuffers
     ld a, 0
 isr_notrollover:
-    ld (showpage), a
+    ld (showpageidx), a
     ld d, 0
     ld e, a
     ld hl, framebufferpage
     add hl, de
     ld a, (hl)
+    ;call printbyte
     srl a ; 16k pages
+    ;call printbyte
     nextreg NEXTREG_LAYER2_RAMPAGE, a
 
 isr_notready:
-;    pop bc
-;    pop hl
-;    pop de
-;    pop af
+
     POPALL
     ei
     reti
@@ -514,11 +492,11 @@ previousframe:
     db 0
 rendertarget:
     db 0
-renderpage:
+renderpageidx:
     db 0
-readypage:
+readypageidx:
     db 0
-showpage:
+showpageidx:
     db 0
 spstore:
     db 0,0
@@ -526,6 +504,7 @@ spstore:
 
 fn:
     db "/flx/output.flx", 0
+;    db "/flx/sk.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm

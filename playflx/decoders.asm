@@ -1,7 +1,7 @@
 ; ------------------------------------------------------------------------
 LZ4:
-; op < 0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
-; op >=0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from current frame
+; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
+; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from current frame
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     call readword ; hl = bytes in block
@@ -17,7 +17,7 @@ tickLZ4:
     or a
     jp m, rleLZ4
     jp z, rleLZ4
-; len >  0 [len][16bit offset] or [127][16 bit len][16 bit offset]
+; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from current frame
     cp 127
     jr z, longcopyprevLZ4_a    
     ld b, 0
@@ -56,7 +56,7 @@ tockLZ4:
     call readbyte
     or a
     jp m, copyprevLZ4_b
-; len >= 0 [len][len bytes] to copy
+; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     ld b, 0
     ld c, a
     push bc
@@ -84,7 +84,7 @@ LZ4done:
     jp blockdone
 
 rleLZ4:
-; len <= 0 [-len][run byte] or [-128][16 bit len][run byte]
+; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
     jr z, longrleLZ4
     neg
@@ -119,7 +119,7 @@ dorleLZ4:
     jr tockLZ4
 
 copyprevLZ4_b:    
-; len <  0 [-len][16bit offset] or [-128][16 bit len][16 bit offset]
+; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
     cp -128
     jr z, longcopyprevLZ4
     neg
