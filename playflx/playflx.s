@@ -258,6 +258,7 @@ pal_loop2:
 
 ; ------------------------------------------------------------------------
 
+startanim:
     ld bc, (frames)
     ei
 animloop:
@@ -317,6 +318,7 @@ wait:
 
     jp UNKNOWN
 blockdone:
+    call readword ; checksums
     ; advance the readypage so it can be shown
     ld a, (renderpageidx)
     ld (readypageidx), a ; mark current renderpage as ready
@@ -339,6 +341,22 @@ waitforfinish:
     ld a, (showpageidx)
     cp e
     jr nz, waitforfinish ; wait for the isr to progress
+
+/*
+; loop
+; note: do this *before* waitforfinish for better results
+; (audio, if any, may require special handling for loops though)
+    ld bc, 0
+    ld de, 0
+    ld hl, 0
+    ld a, (filehandle)
+    call fseek ; seek to beginning
+    call nextfileblock
+    ld bc, 4+2+2+512
+    call skipbytes
+    jp startanim
+; /loop
+*/
 
 
 fail:
@@ -514,8 +532,8 @@ spstore:
 
 
 fn:
-;    db "/flx/output.flx", 0
-    db "/flx/cube.flx", 0
+    db "/flx/output.flx", 0
+;    db "/flx/cubed.flx", 0
 
     INCLUDE isr.asm
     INCLUDE cachedio.asm

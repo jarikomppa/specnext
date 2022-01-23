@@ -1,3 +1,14 @@
+    MACRO PRINT msg
+        PUSHALL
+        ld hl, .message
+        call printmsg
+        jr .done
+.message:
+            db msg,0
+.done:
+        POPALL
+    ENDM
+
     MACRO STORENEXTREG regno, addr
         ld bc, 0x243B ; nextreg select
         ld a, regno
