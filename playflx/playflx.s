@@ -289,11 +289,11 @@ wait:
     cp e       ; if showpageidx == renderpageidx
     jr z, wait ; wait for the isr to progress
 
-;    PUSHALL
 ;    ; TODO: remember to remove this clear
+;    PUSHALL
 ;    ld de, 0
 ;    ld bc, 256*192
-;    ld a, 1
+;    ld a, 100
 ;    call screenfill 
 ;    POPALL
 
@@ -318,7 +318,24 @@ wait:
 
     jp UNKNOWN
 blockdone:
-    call readword ; checksums
+    call readword     ; checksums -> hl
+    call calcchecksum ; checksums -> de
+    or a
+    sbc hl, de
+    jr z, checksum_ok
+    add hl, de
+    call printword
+    ex de, hl
+    call printword
+    ld hl, (frames)
+    pop bc ; number of frames    
+    or a
+    sbc hl, bc
+    call printword
+    call writeout
+    jp fail
+
+checksum_ok:    
     ; advance the readypage so it can be shown
     ld a, (renderpageidx)
     ld (readypageidx), a ; mark current renderpage as ready
@@ -535,6 +552,7 @@ fn:
     db "/flx/output.flx", 0
 ;    db "/flx/cubed.flx", 0
 
+    INCLUDE checksum.asm
     INCLUDE isr.asm
     INCLUDE cachedio.asm
     INCLUDE decoders.asm
