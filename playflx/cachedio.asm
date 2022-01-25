@@ -32,20 +32,20 @@ read:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, doread
+    jr nz, .doread
     call nextfileblock
     ld hl, 8192
-doread:
+.doread:
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
     push hl
     or a
     sbc hl, bc
-    jr nc, oklen
+    jr nc, .oklen
     pop bc   ; max len
     push bc
-oklen:
+.oklen:
     pop hl ; throw-away max len
     pop hl ; original copy length
     pop de ; destination address
@@ -82,20 +82,20 @@ skipbytes:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, doskip
+    jr nz, .doskip
     call nextfileblock
     ld hl, 8192
-doskip:
+.doskip:
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
     push hl
     or a
     sbc hl, bc
-    jr nc, skip_oklen
+    jr nc, .oklen
     pop bc   ; max len
     push bc
-skip_oklen:
+.oklen:
     pop hl ; throw-away max len
     pop hl ; original copy length
     ; now bc = byte count, hl = original byte count

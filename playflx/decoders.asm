@@ -11,26 +11,26 @@ LZ4:
     push af
     ld a, (rendertarget)
     ld (previousframe), a
-tickLZ4:
+.tick:
     push hl
     call readbyte
     or a
-    jp m, rleLZ4
-    jp z, rleLZ4
+    jp m, .rle
+    jp z, .rle
 ; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from current frame
     cp 127
-    jr z, longcopyprevLZ4_a    
+    jr z, .longcopyprev_a
     ld b, 0
     ld c, a
-    jr docopyprevLZ4_a
-longcopyprevLZ4_a:    
+    jr .docopyprev_a
+.longcopyprev_a:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ4_a:
+.docopyprev_a:
     call readword
     push bc
     push de
@@ -49,13 +49,13 @@ docopyprevLZ4_a:
     dec hl
     ld a, h
     or a, l
-    jr z, LZ4done
+    jr z, .done
 
-tockLZ4:
+.tock:
     push hl
     call readbyte
     or a
-    jp m, copyprevLZ4_b
+    jp m, .copyprev_b
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     ld b, 0
     ld c, a
@@ -75,30 +75,30 @@ tockLZ4:
     sbc hl, bc
     ld a, h
     or a, l
-    jr z, LZ4done
-    jp tickLZ4
+    jr z, .done
+    jp .tick
 
-LZ4done:
+.done:
     pop af
     ld (previousframe), a
     jp blockdone
 
-rleLZ4:
+.rle:
 ; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
-    jr z, longrleLZ4
+    jr z, .longrle
     neg
     ld b, 0
     ld c, a
-    jr dorleLZ4
-longrleLZ4:
+    jr .dorle
+.longrle:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-dorleLZ4:
+.dorle:
     call readbyte
     push bc
     push de
@@ -115,25 +115,25 @@ dorleLZ4:
     dec hl
     ld a, h
     or a, l
-    jr z, LZ4done
-    jr tockLZ4
+    jr z, .done
+    jr .tock
 
-copyprevLZ4_b:    
+.copyprev_b:
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
     cp -128
-    jr z, longcopyprevLZ4
+    jr z, .longcopyprev
     neg
     ld c, a
     ld b, 0
-    jr docopyprevLZ4
-longcopyprevLZ4:
+    jr .docopyprev
+.longcopyprev:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ4:
+.docopyprev:
     call readword
     push bc
     push de
@@ -152,8 +152,8 @@ docopyprevLZ4:
     dec hl
     ld a, h
     or a, l
-    jr z, LZ4done
-    jp tickLZ4
+    jr z, .done
+    jp .tick
 
 ; ------------------------------------------------------------------------
 LZ5:
@@ -163,26 +163,26 @@ LZ5:
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     call readword ; hl = bytes in block
     ld de, 0 ; screen offset
-tickLZ5:
+.tick:
     push hl
     call readbyte
     or a
-    jp m, rleLZ5
-    jp z, rleLZ5
+    jp m, .rle
+    jp z, .rle
 ; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from previous frame
     cp 127
-    jr z, longcopyprevLZ5_a    
+    jr z, .longcopyprev_a
     ld b, 0
     ld c, a
-    jr docopyprevLZ5_a
-longcopyprevLZ5_a:    
+    jr .docopyprev_a
+.longcopyprev_a:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ5_a:
+.docopyprev_a:
     call readword
     push bc
     push de
@@ -203,25 +203,25 @@ docopyprevLZ5_a:
     or a, l
     jp z, blockdone
 
-tockLZ5:
+.tock:
     push hl
     call readbyte
     or a
-    jp m, copyprevLZ5_b
+    jp m, .copyprev_b
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from previous frame
     cp 127
-    jr z, longcopyfromfileLZ5
+    jr z, .longcopyfromfile
     ld b, 0
     ld c, a
-    jr docopyfromfileLZ5
-longcopyfromfileLZ5:
+    jr .docopyfromfile
+.longcopyfromfile:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyfromfileLZ5:    
+.docopyfromfile:
     push bc
     push de
     call screencopyfromfile
@@ -239,24 +239,24 @@ docopyfromfileLZ5:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ5
+    jp .tick
 
-rleLZ5:
+.rle:
 ; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
-    jr z, longrleLZ5
+    jr z, .longrle
     neg
     ld b, 0
     ld c, a
-    jr dorleLZ5
-longrleLZ5:
+    jr .dorle
+.longrle:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-dorleLZ5:
+.dorle:
     call readbyte
     push bc
     push de
@@ -274,24 +274,24 @@ dorleLZ5:
     ld a, h
     or a, l
     jp z, blockdone
-    jr tockLZ5
+    jr .tock
 
-copyprevLZ5_b:    
+.copyprev_b:
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from previous frame
     cp -128
-    jr z, longcopyprevLZ5
+    jr z, .longcopyprev
     neg
     ld c, a
     ld b, 0
-    jr docopyprevLZ5
-longcopyprevLZ5:
+    jr .docopyprev
+.longcopyprev:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ5:
+.docopyprev:
     call readword
     push bc
     push de
@@ -311,7 +311,7 @@ docopyprevLZ5:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ5
+    jp .tick
 
 ; ------------------------------------------------------------------------
 LZ6:
@@ -321,26 +321,26 @@ LZ6:
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     call readword ; hl = bytes in block
     ld de, 0 ; screen offset
-tickLZ6:
+.tick:
     push hl
     call readbyte
     or a
-    jp m, rleLZ6
-    jp z, rleLZ6
+    jp m, .rle
+    jp z, .rle
 ; op > 0 [op][2 byte offset] or [127][2 byte size][2 byte offset] - Copy from previous frame
     cp 127
-    jr z, longcopyprevLZ6_a    
+    jr z, .longcopyprev_a
     ld b, 0
     ld c, a
-    jr docopyprevLZ6_a
-longcopyprevLZ6_a:    
+    jr .docopyprev_a
+.longcopyprev_a:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ6_a:
+.docopyprev_a:
     call readword
     push bc
     push de
@@ -361,25 +361,25 @@ docopyprevLZ6_a:
     or a, l
     jp z, blockdone
 
-tockLZ6:
+.tock:
     push hl
     call readbyte
     or a
-    jp m, copyprevLZ6_b
+    jp m, .copyprev_b
 ; op >=0 [op][literal bytes] or [127][2 byte size][literal bytes] - Copy literal values
     cp 127
-    jr z, longcopyfromfileLZ6
+    jr z, .longcopyfromfile
     ld b, 0
     ld c, a
-    jr docopyfromfileLZ6
-longcopyfromfileLZ6:
+    jr .docopyfromfile
+.longcopyfromfile:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyfromfileLZ6:    
+.docopyfromfile:
     push bc
     push de
     call screencopyfromfile
@@ -397,24 +397,24 @@ docopyfromfileLZ6:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ6
+    jp .tick
 
-rleLZ6:
+.rle:
 ; op <=0 [-op][runvalue] or [-128][2 byte size][runvalue] - RLE
     cp -128
-    jr z, longrleLZ6
+    jr z, .longrle
     neg
     ld b, 0
     ld c, a
-    jr dorleLZ6
-longrleLZ6:
+    jr .dorle
+.longrle:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-dorleLZ6:
+.dorle:
     call readbyte
     push bc
     push de
@@ -432,24 +432,24 @@ dorleLZ6:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tockLZ6
+    jp .tock
 
-copyprevLZ6_b:    
+.copyprev_b:
 ; op < 0 [-op][2 byte offset] or [-128][2 byte size][2 byte offset] - Copy from current frame
     cp -128
-    jr z, longcopyprevLZ6_b
+    jr z, .longcopyprev_b
     neg
     ld c, a
     ld b, 0
-    jr docopyprevLZ6_b
-longcopyprevLZ6_b:
+    jr .docopyprev_b
+.longcopyprev_b:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ6_b:
+.docopyprev_b:
     call readword
     push bc
     push de
@@ -480,7 +480,7 @@ docopyprevLZ6_b:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ6
+    jp .tick
 
 ; ------------------------------------------------------------------------
 LZ1B:
@@ -490,12 +490,12 @@ LZ1B:
 ; op <  0 [-op][16 bit ofs] copy from previous
     call readword ; hl = bytes in block
     ld de, 0 ; screen offset
-tickLZ1b:
+.tick:
     push hl
     call readbyte
     or a
-    jp m, rleLZ1b
-    jp z, rleLZ1b
+    jp m, .rle
+    jp z, .rle
 ; op  > 0 [op][16 bit ofs] copy from previous
     ld b, 0
     ld c, a
@@ -519,11 +519,11 @@ tickLZ1b:
     or a, l
     jp z, blockdone
 
-tockLZ1b:
+.tock:
     push hl
     call readbyte
     or a
-    jp m, copyprevLZ1b_b
+    jp m, .copyprev
 ; op >= 0 [op][.. op bytes ..]
     ld b, 0
     ld c, a
@@ -544,9 +544,9 @@ tockLZ1b:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ1b
+    jp .tick
 
-rleLZ1b:
+.rle:
 ; op <= 0 [-op][run byte] 
     neg
     ld b, 0
@@ -568,9 +568,9 @@ rleLZ1b:
     ld a, h
     or a, l
     jp z, blockdone
-    jr tockLZ1b
+    jr .tock
 
-copyprevLZ1b_b:    
+.copyprev
 ; op <  0 [-op][16 bit ofs] copy from previous
     neg
     ld c, a
@@ -594,7 +594,7 @@ copyprevLZ1b_b:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ1b
+    jp .tick
 
 ; ------------------------------------------------------------------------
 LZ3C:
@@ -604,26 +604,26 @@ LZ3C:
 ; op <= 0 [-128][2 byte len] or [-op][.. bytes ..]
     call readword ; hl = bytes in block
     ld de, 0 ; screen offset
-tickLZ3c:
+.tick:
     push hl
     call readbyte
     or a
-    jp m, rleLZ3c
-    jp z, rleLZ3c
+    jp m, .rle
+    jp z, .rle
 ; op >  0 [127][2 byte len] or [op][current ofs +/- signed byte] copy from previous
     cp 127
-    jr z, longcopyprevLZ3c_a    
+    jr z, .longcopyprev_a
     ld b, 0
     ld c, a
-    jr docopyprevLZ3c_a
-longcopyprevLZ3c_a:    
+    jr .docopyprev_a
+.longcopyprev_a:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ3c_a:
+.docopyprev_a:
     call readbyte ; +/- offset
     push bc
     push de
@@ -655,26 +655,26 @@ docopyprevLZ3c_a:
     or a, l
     jp z, blockdone
 
-tockLZ3c:
+.tock:
     push hl
     call readbyte
     or a
-    jp m, copyLZ3c_b
-    jp z, copyLZ3c_b
+    jp m, .copy_b
+    jp z, .copy_b
 ; op >  0 [127][2 byte len] or [op][current ofs +/- signed byte] copy from previous
     cp 127
-    jr z, longcopyprevLZ3c_b
+    jr z, .longcopyprev_b
     ld c, a
     ld b, 0
-    jr docopyprevLZ3c_b
-longcopyprevLZ3c_b
+    jr .docopyprev_b
+.longcopyprev_b
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyprevLZ3c_b:
+.docopyprev_b:
 
     call readbyte ; +/- offset
     push bc
@@ -707,24 +707,24 @@ docopyprevLZ3c_b:
     or a, l
     jp z, blockdone
 
-    jp tickLZ3c
+    jp .tick
 
-rleLZ3c:
+.rle:
 ; op <= 0 [-128][2 byte len] or [-op][run byte]
     cp -128
-    jr z, longrleLZ3c
+    jr z, .longrle
     neg
     ld b, 0
     ld c, a
-    jr dorleLZ3c
-longrleLZ3c:
+    jr .dorle
+.longrle:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-dorleLZ3c:
+.dorle:
     call readbyte
     push bc
     push de
@@ -742,24 +742,24 @@ dorleLZ3c:
     ld a, h
     or a, l
     jp z, blockdone
-    jr tockLZ3c
+    jr .tock
 
-copyLZ3c_b:
+.copy_b:
 ; op <= 0 [-128][2 byte len] or [-op][.. bytes ..]
     cp -128
-    jr z, longcopyLZ3c
+    jr z, .longcopy
     neg
     ld c, a
     ld b, 0
-    jr docopyLZ3c
-longcopyLZ3c:
+    jr .docopy
+.longcopy:
     pop hl
     dec hl
     dec hl
     push hl
     call readword
     ld bc, hl ; fake-ok
-docopyLZ3c:
+.docopy:
     push bc
     push de
     call screencopyfromfile
@@ -777,7 +777,7 @@ docopyLZ3c:
     ld a, h
     or a, l
     jp z, blockdone
-    jp tickLZ3c
+    jp .tick
 
 ; ------------------------------------------------------------------------
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;

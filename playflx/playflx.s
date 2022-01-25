@@ -140,19 +140,20 @@ realstart:
 ; header tag read and apparently fine at this point.
 
     ; allocate framebuffers
+allocframebuffers:
     ld b, 37-5 ; total framebuffers to try
     ; -5 because specnext 3.01.05 core has a bug and doesn't display the last few. TODO: upgrade to .10
     ; (curiously, cspect has a very similar issue)
     ld e, 0 ; page; 6 pages per framebuffer (222 pages to reserve)
     ld hl, allocpages
     ld ix, framebufferpage
-nextframebuffer:
+.nextframebuffer:
     push bc
     ld a, e
     ld (SCRATCH+100), a ; put framebuffer's first page to scratch
     ld c, 0 ; successful reserves
     ld b, 6 ; pages per framebuffer
-nextframebufferpage:
+.nextframebufferpage:
     push bc
     push de
     push hl
@@ -160,16 +161,16 @@ nextframebufferpage:
     pop hl
     pop de
     pop bc
-    jr nc, reservefail
+    jr nc, .reservefail
     inc c         ; on successful alloc, increase c,
     ld (hl), e    ; store page to be freed on teardown
     inc hl        ; allocpages++
-reservefail:
+.reservefail:
     inc e         ; next page
-    djnz nextframebufferpage
+    djnz .nextframebufferpage
     ld a, c
     cp 6
-    jr nz, noframebuffer ; failed to allocate at least 1 of the 6 pages, no twinkie
+    jr nz, .noframebuffer ; failed to allocate at least 1 of the 6 pages, no twinkie
     ld a, (SCRATCH+100) ; put the first page of the framebuffer to table
     ld (ix), a
     ;call printbyte
@@ -178,9 +179,9 @@ reservefail:
     inc a
     ld (framebuffers), a
     ;call printbyte
-noframebuffer:    
+.noframebuffer:    
     pop bc
-    djnz nextframebuffer
+    djnz .nextframebuffer
 
     ; make sure we have at least two framebuffers
     ld a, (framebuffers)
@@ -237,22 +238,23 @@ noframebuffer:
     ld bc, 512
     call read
 
+setpalette:
 ; set palette
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
     ld hl, SCRATCH
     ld b, 0
-pal_loop1:
+.loop1:
     ld a, (hl)
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
-    djnz pal_loop1
+    djnz .loop1
 
     ; since there's 512 bytes, let's do it again
-pal_loop2:
+.loop2:
     ld a, (hl)
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
-    djnz pal_loop2
+    djnz .loop2
 
 ; ready for animation loop
 
@@ -270,9 +272,9 @@ animloop:
     ld a, (renderpageidx)
     inc a              ; renderpageidx++
     cp e
-    jr nz, notrollover ; if renderpageidx == framebuffers
+    jr nz, .notrollover ; if renderpageidx == framebuffers
     ld a, 0
-notrollover:
+.notrollover:
     ld (renderpageidx), a
     ld e, a
     ld hl, framebufferpage
@@ -283,11 +285,11 @@ notrollover:
     ld (rendertarget), a
 
     ;call printbyte
-wait:
+.wait:
     ;call isrc
     ld a, (showpageidx)
     cp e       ; if showpageidx == renderpageidx
-    jr z, wait ; wait for the isr to progress
+    jr z, .wait ; wait for the isr to progress
 
 ;    ; TODO: remember to remove this clear
 ;    PUSHALL
@@ -319,10 +321,11 @@ wait:
     jp UNKNOWN
 blockdone:
     call readword     ; checksums -> hl
+/*    
     call calcchecksum ; checksums -> de
     or a
     sbc hl, de
-    jr z, checksum_ok
+    jr z, .checksum_ok
     add hl, de
     call printword
     ex de, hl
@@ -334,8 +337,8 @@ blockdone:
     call printword
     call writeout
     jp fail
-
-checksum_ok:    
+.checksum_ok:    
+*/
     ; advance the readypage so it can be shown
     ld a, (renderpageidx)
     ld (readypageidx), a ; mark current renderpage as ready
@@ -353,11 +356,11 @@ checksum_ok:
 
     ld a, (readypageidx)
     ld e, a
-waitforfinish:
+.waitforfinish:
     ;call isrc
     ld a, (showpageidx)
     cp e
-    jr nz, waitforfinish ; wait for the isr to progress
+    jr nz, .waitforfinish ; wait for the isr to progress
 
 /*
 ; loop
@@ -395,14 +398,14 @@ fail:
 freeframebuffers:
     ld a, (hl)
     cp 0
-    jr z, notallocated
+    jr z, .notallocated
     ld e, a
     push bc
     push hl
     call freepage
     pop hl
     pop bc
-notallocated:
+.notallocated:
     inc hl 
     djnz freeframebuffers
 
@@ -472,10 +475,10 @@ isr:
     ld a, (framewaits)
     inc a
     cp c
-    jr z, isr_nodelay
+    jr z, .nodelay
     ld (framewaits), a
-    jp isr_notready
-isr_nodelay:
+    jp .notready
+.nodelay:
     ; If we can, advance to the next frame.
     ld a, (readypageidx)
     ld e, a
@@ -483,12 +486,12 @@ isr_nodelay:
     ld d, a
     ld a, (showpageidx)
     cp a, e
-    jr z, isr_notready ; if showpageidx == readypageidx 
+    jr z, .notready    ; if showpageidx == readypageidx 
     inc a              ; showpageidx++
     cp a, d
-    jr nz, isr_notrollover ; if showpageidx != framebuffers
+    jr nz, .notrollover ; if showpageidx != framebuffers
     ld a, 0
-isr_notrollover:
+.notrollover:
     ld (showpageidx), a
     ld d, 0
     ld e, a
@@ -504,7 +507,7 @@ isr_notrollover:
     ld a, 0
     ld (framewaits), a
 
-isr_notready:
+.notready:
 
     POPALL
     ei
@@ -552,7 +555,10 @@ fn:
     db "/flx/output.flx", 0
 ;    db "/flx/cubed.flx", 0
 
+
+/*
     INCLUDE checksum.asm
+*/    
     INCLUDE isr.asm
     INCLUDE cachedio.asm
     INCLUDE decoders.asm

@@ -1,1 +1,1 @@
-del *.ihx *.lk *.lst *.map *.noi *.rel *.sym *.asm *.bak *.dot *.raw
+del *.ihx *.lk *.lst *.map *.noi *.rel *.sym *.bak *.dot *.raw

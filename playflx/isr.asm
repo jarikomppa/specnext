@@ -7,10 +7,10 @@ setupisr7::
     ld  a,      d 
     ld  i,      a        ; interrupt will hop to 0xfe?? where ?? is random 
     ld  a,      l        ; we need 257 copies of the address
-rep:
+.rep:
     ld  (de),   a 
     inc e
-    jr  nz,     rep
+    jr  nz,     .rep
     inc d          ; just one more
     ld  (de),   a
     ; isr table built, now a short trampoline to jump to our routine

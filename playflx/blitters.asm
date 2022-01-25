@@ -16,14 +16,14 @@ setupdma:
 ; bc bytes
 memcpy:
     push hl
-    ld hl, 20
+    ld hl, 20 ; todo: figure out actual break-even point
     or a
     sbc hl, bc
-    jr c, dma_memcpy
+    jr c, .dma_memcpy
     pop hl
     ldir
     ret
-dma_memcpy:
+.dma_memcpy:
     pop hl
     push de
     push bc
@@ -62,11 +62,11 @@ screenfill:
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, screenfill_nonzero
+    jr nz, .nonzero
     pop af
     ret
     
-screenfill_nonzero:
+.nonzero:
     push bc
     push de
     ; map framebuffer bank
@@ -95,10 +95,10 @@ screenfill_nonzero:
     push hl
     or a
     sbc hl, bc   
-    jr nc, okspan
+    jr nc, .okspan
     pop bc  ; bc = max span
     push bc
-okspan:    
+.okspan:
     pop hl ; throw-away unused maxspan
     pop de
     pop hl ; original byte count    
@@ -126,10 +126,10 @@ okspan:
     ; if we're filling one byte, make sure we're not filling 64k..
     ld a, b
     or c
-    jr z, skipcopy
+    jr z, .skipcopy
     ;ldir ; (de)=(hl), de++, hl++, bc--
     call memcpy
-skipcopy:
+.skipcopy:
     pop af
     pop hl
     pop bc
@@ -157,12 +157,12 @@ screencopyfromfile:
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, screenfill_nonzerofromfile
+    jr nz, .nonzero
     pop de
     pop bc
     ret
     
-screenfill_nonzerofromfile:
+.nonzero:
     ; map framebuffer bank
     ld a, d
     rlca
@@ -190,10 +190,10 @@ screenfill_nonzerofromfile:
     push hl
     or a
     sbc hl, bc   
-    jr nc, okspanfromfile
+    jr nc, .okspan
     pop bc  ; bc = max span
     push bc
-okspanfromfile:    
+.okspan:
     pop hl ; throw-away unused maxspan
     pop de
     pop hl ; original byte count    
@@ -238,12 +238,12 @@ screencopyfromprevframe:
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, screenfill_nonzerofromprevframe
+    jr nz, .nonzero
     pop de
     pop bc
     ret
     
-screenfill_nonzerofromprevframe:
+.nonzero:
     ; map framebuffer bank
     ld a, d
     rlca
@@ -271,10 +271,10 @@ screenfill_nonzerofromprevframe:
     push hl
     or a
     sbc hl, bc   
-    jr nc, okspanfromprevframe
+    jr nc, .okspan
     pop bc  ; bc = max span
     push bc
-okspanfromprevframe:    
+.okspan:    
     pop hl ; throw-away unused maxspan
     pop de
     pop hl ; original byte count    
@@ -318,10 +318,10 @@ readprevframe:
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, screenfill_nonzeroreadprevframe
+    jr nz, .nonzero
     ret
     
-screenfill_nonzeroreadprevframe:
+.nonzero:
     push hl ; stack: target addr
     push bc ; stack: bytecount, target address
     push ix 
@@ -351,10 +351,10 @@ screenfill_nonzeroreadprevframe:
     push hl ; stack: maxspan, bytecount, targetaddr
     or a
     sbc hl, bc   
-    jr nc, okspanreadprevframe
+    jr nc, .okspan
     pop bc  ; stack: bytecount, targetaddr
     push bc ; stack: maxspan, bytecount, targetaddr
-okspanreadprevframe:    
+.okspan:    
     pop hl ; stack: bytecount, targetaddr
     pop hl ; stack: targetaddr
     pop af ; stack: -
