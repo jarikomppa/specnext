@@ -1,13 +1,17 @@
 setupdma:
-    ld a, 0b01010100; // R1-write A time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // 2t
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b01010000; // R2-write B time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // R2-Cycle length port B
-    out (PORT_DATAGEAR_DMA), a
+    ld hl, .initdata
+    ld bc, PORT_DATAGEAR_DMA | (.datasize<<8)
+    otir
     ret
+.initdata:
+    db  $C3,$C3,$C3,$C3,$C3,$C3 ; reset DMA from any possible state (6x reset command)
+    db  %10'0'0'0010            ; WR5 = stop on end of block, /CE only
+    db  %1'0'000000             ; WR3 = all extra features [of real chip] disabled
+    db  %0'1'01'0'100           ; WR1 = A address ++, memory
+    db  2                       ; + custom 2T timing
+    db  %0'1'01'0'000           ; WR2 = B address ++, memory
+    db  2                       ; + custom 2T timing
+.datasize: EQU $ - .initdata
 
 ; ------------------------------------------------------------------------
 
