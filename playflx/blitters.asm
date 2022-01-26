@@ -19,16 +19,15 @@ setupdma:
 ; hl src
 ; bc bytes
 memcpy:
-    push hl
-    ld hl, 20 ; todo: figure out actual break-even point
-    or a
-    sbc hl, bc
-    jr c, .dma_memcpy
-    pop hl
+    ; check BC against break-even point (LDIR vs DMA)
+    ld a, 20 ; todo: figure out actual break-even point
+    cp c
+    sbc a, a                    ; 00 for C <0..20>, FF for C <21..FF>
+    or b                        ; non-zero for BC > 20
+    jr nz, .dma_memcpy
     ldir
     ret
 .dma_memcpy:
-    pop hl
     push de
     push bc
     push hl
