@@ -264,8 +264,8 @@ setpalette:
 ; ------------------------------------------------------------------------
 
 startanim:
-    ld bc, (frames)
     ei
+    ld bc, (frames)
 animloop:
     push bc
 
@@ -292,7 +292,10 @@ animloop:
     ;call isrc
     ld a, (showpageidx)
     cp e       ; if showpageidx == renderpageidx
-    jr z, .wait ; wait for the isr to progress
+    jr nz, .nowait ; wait for the isr to progress
+    ei
+    jr .wait
+.nowait
 
 ;    ; TODO: remember to remove this clear
 ;    PUSHALL

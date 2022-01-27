@@ -256,11 +256,9 @@ opt_keep:
     ld (ix+5), 0
     ret
 
-msg_precache:
-    db "opt_precache\r",0
 opt_precache:
-    ld hl, msg_precache
-    call printmsg
+    ld hl, startanim
+    ld (hl), 0 
     ret
 
 command_tail:
