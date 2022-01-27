@@ -15,44 +15,49 @@ setupdma:
 
 ; ------------------------------------------------------------------------
 
-; de dest
-; hl src
-; bc bytes
+; de dest (returns advanced by +bc)
+; hl src (returns advanced by +bc)
+; bc bytes (is preserved)
+; LDIR cost is 52 + 21*bc @3.5MHz ; 62 + 24*bc @28MHz (+read_wait)
+; DMA cost is 233 + 4*bc @3.5MHz ; 279 + 5*bc @28MHz (+read_wait)
 memcpy:
     ; check BC against break-even point (LDIR vs DMA)
-    ld a, 20 ; todo: figure out actual break-even point
+    ld a, 12 ; break-even is 12 @28MHz, 11 @3.5MHz
     cp c
-    sbc a, a                    ; 00 for C <0..20>, FF for C <21..FF>
-    or b                        ; non-zero for BC > 20
+    sbc a, a                    ; 00 for C <0..12>, FF for C <13..FF>
+    or b                        ; non-zero for BC > 12
     jr nz, .dma_memcpy
+    push bc
     ldir
+    pop bc
     ret
 .dma_memcpy:
-    push de
-    push bc
-    push hl
-    ld bc, PORT_DATAGEAR_DMA
-    ld a, 0x83; // DMA_DISABLE
-    out (PORT_DATAGEAR_DMA), a
+    ; this code style using `out (n),a` is actually reasonably fast and preserves HL,DE,BC for free
     ld a, 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
     out (PORT_DATAGEAR_DMA), a
-    pop hl
-    out (c), l ; source
-    out (c), h ; source
-    pop hl
-    out (c), l ; count
-    out (c), h ; count
+    ld a, l ; source
+    out (PORT_DATAGEAR_DMA), a
+    ld a, h ; source
+    out (PORT_DATAGEAR_DMA), a
+    ld a, c ; count
+    out (PORT_DATAGEAR_DMA), a
+    ld a, b ; count
+    out (PORT_DATAGEAR_DMA), a
     ld a, 0b10101101; // R4-Continuous mode (use this for block transfer), write dest adress
     out (PORT_DATAGEAR_DMA), a
-    pop hl
-    out (c), l ; dest
-    out (c), h ; dest
-    ld a, 0b10000010; // R5-Restart on end of block, RDY active LOW
+    ld a, e ; dest
+    out (PORT_DATAGEAR_DMA), a
+    ld a, d ; dest
     out (PORT_DATAGEAR_DMA), a
     ld a, 0b11001111; // R6-Load
     out (PORT_DATAGEAR_DMA), a
     ld a, 0x87;       // R6-Enable DMA
     out (PORT_DATAGEAR_DMA), a
+    ; advance HL,DE the same way how LDIR would, but BC is preserved
+    add hl, bc
+    ex de, hl
+    add hl, bc
+    ex de, hl
     ret
 
 ; ------------------------------------------------------------------------
