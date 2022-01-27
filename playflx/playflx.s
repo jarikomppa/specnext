@@ -23,6 +23,7 @@ SCRATCH EQU 0x8000
 ; (terminated by $00, $0d or ':').
     org     DOTADDR
     di
+    ld (cmdline-DOTDIFF), hl
     push af
     push bc
     push de
@@ -98,6 +99,8 @@ realstart:
     STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
     STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
 
+    call parsecmdline
+
     call setupdma
 
     call allocpage
@@ -112,29 +115,29 @@ realstart:
     ld (filepage), a
     nextreg NEXTREG_MMU5, a    
 
-    ld  hl, fn
+    ld  hl, SCRATCH
     ld  b,  1       ; open existing
     call    fopen
-    jp  c,  fail
+    jp  c,  fail_open
     ld (filehandle), a
 
     call nextfileblock
 
     call readbyte
     cp 'N'
-    jp nz, fail
+    jp nz, fail_type
 
     call readbyte
     cp 'X'
-    jp nz, fail
+    jp nz, fail_type
 
     call readbyte
     cp 'F'
-    jp nz, fail
+    jp nz, fail_type
 
     call readbyte
     cp 'L'
-    jp nz, fail
+    jp nz, fail_type
 
 
 ; header tag read and apparently fine at this point.
@@ -186,7 +189,7 @@ allocframebuffers:
     ; make sure we have at least two framebuffers
     ld a, (framebuffers)
     cp 2
-    jp c, fail
+    jp c, fail_mem
 
 ;    ld a, 29
 ;    ld (framebuffers), a
@@ -321,7 +324,7 @@ animloop:
     jp UNKNOWN
 blockdone:
     call readword     ; checksums -> hl
-/*    
+  /*  
     call calcchecksum ; checksums -> de
     or a
     sbc hl, de
@@ -465,6 +468,28 @@ allocfail:
     ei
     ret ; exit application
 
+fail_open_msg:
+    db "File open failed\r", 0
+fail_open:
+    ld hl, fail_open_msg
+    call printmsg
+    jp fail
+
+fail_type_msg:
+    db "Wrong file type\r",0
+fail_type:
+    ld hl, fail_type_msg
+    call printmsg
+    jp fail
+
+fail_mem_msg:
+    db "Can't allocate framebuffers\r",0
+fail_mem:
+    ld hl, fail_mem_msg
+    call printmsg
+    jp fail
+
+
 isr:
 ;    reti
 ;isrc:
@@ -549,11 +574,13 @@ showpageidx:
     db 0
 spstore:
     db 0,0
+cmdline
+    dw 0
 
 
-fn:
-    db "/flx/output.flx", 0
-;    db "/flx/cubed.flx", 0
+;fn:
+    ;db "/flx/output.flx", 0
+;    db "/flx/hw.flx", 0
 
 
 /*
@@ -565,3 +592,4 @@ fn:
     INCLUDE blitters.asm
     INCLUDE print.asm
     INCLUDE esxdos.asm
+    INCLUDE cmdline.asm
