@@ -347,11 +347,22 @@ blockdone:
     ld (readypageidx), a ; mark current renderpage as ready
     ld a, (rendertarget)
     ld (previousframe), a ; current render target is now previous
+    
+input_call:
+    call userinput
+    
     pop bc ; number of frames
     dec bc
     ld a, b
     or c
     jp nz, animloop
+
+; ------------------------------------------------------------------------
+
+loopjumppoint: ; option writes jump here
+    nop
+    nop
+    nop
 
 ; ------------------------------------------------------------------------
 
@@ -364,23 +375,6 @@ blockdone:
     ld a, (showpageidx)
     cp e
     jr nz, .waitforfinish ; wait for the isr to progress
-
-/*
-; loop
-; note: do this *before* waitforfinish for better results
-; (audio, if any, may require special handling for loops though)
-    ld bc, 0
-    ld de, 0
-    ld hl, 0
-    ld a, (filehandle)
-    call fseek ; seek to beginning
-    call nextfileblock
-    ld bc, 4+2+2+512
-    call skipbytes
-    jp startanim
-; /loop
-*/
-
 
 fail:
 
@@ -423,9 +417,9 @@ freeframebuffers:
     RESTORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 9
     RESTORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
+restore_layer2_rampage: ; for the option not to restore this reg
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
     RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
-
 
     ld a, (isrpage)
     ld e, a
@@ -467,6 +461,23 @@ allocfail:
     or a ; clear carry
     ei
     ret ; exit application
+
+loopanim:
+; perform loop
+; note: do this *before* waitforfinish for better results
+; (audio, if any, may require special handling for loops though)
+    ld bc, 0
+    ld de, 0
+    ld hl, 0
+    ld a, (filehandle)
+    call fseek ; seek to beginning
+    call nextfileblock
+    ld bc, 4+2+2+512
+    call skipbytes
+    jp startanim
+
+
+
 
 fail_open_msg:
     db "File open failed\r", 0
@@ -593,3 +604,4 @@ cmdline
     INCLUDE print.asm
     INCLUDE esxdos.asm
     INCLUDE cmdline.asm
+    INCLUDE userinput.asm

@@ -35,7 +35,10 @@ helptext:
     db "  Don't restore layer 2 register\r"
     db "-p --precache\r"
     db "  Fill all framebuffers at start\r"
+    db "-g --game\r"
+    db "  Game mode, read docs for info\r"    
     db 0
+;       12345678901234567890123456789012    
 
 ; From bas2txt by Garry Lancaster
 ; ***************************************************************************
@@ -215,28 +218,42 @@ opt8_a: dw opt_precache
         db opt9_a-opt9
 opt9:   db "--precache"
 opt9_a: dw opt_precache
+        db opt10_a-opt10
+opt10:  db "-g"
+opt10_a:dw opt_game
+        db opt11_a-opt11
+opt11:  db "--game"
+opt11_a:dw opt_game
         ; end of table
         db 0
 
-msg_loop:
-    db "opt_loop\r",0
 opt_loop:
-    ld hl, msg_loop
-    call printmsg
+    ld hl, loopanim
+    ld (loopjumppoint+1), hl
+    ld hl, loopjumppoint
+    ld (hl), 0xc3 ; jp
     ret
 
-msg_unskippable:
-    db "opt_unskippable\r",0
 opt_unskippable:
-    ld hl, msg_unskippable
-    call printmsg
+    ; NOP the input call
+    ld ix, input_call
+    ld (ix + 0), 0
+    ld (ix + 1), 0
+    ld (ix + 2), 0
     ret
 
-msg_keep:
-    db "opt_keep\r",0
+opt_game:
+    ld hl, gamemode
+    ld (input_call+1), hl
+    ret
+
 opt_keep:
-    ld hl, msg_keep
-    call printmsg
+; C2EA 3A FB C3    >        ld a, (regstore + 12)
+; C2ED ED 92 12    >        nextreg NEXTREG_LAYER2_RAMPAGE, a
+    ld ix, restore_layer2_rampage
+    ld (ix+3), 0
+    ld (ix+4), 0
+    ld (ix+5), 0
     ret
 
 msg_precache:
