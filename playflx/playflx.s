@@ -1,4 +1,5 @@
     DEVICE ZXSPECTRUMNEXT
+;     DEFINE DO_CHECKSUM_CHECK
 ; PlayFLX
 ; FLX video player
 ; by Jari Komppa, http://iki.fi/sol
@@ -327,7 +328,8 @@ animloop:
     jp UNKNOWN
 blockdone:
     call readword     ; checksums -> hl
-  /*  
+
+  IFDEF DO_CHECKSUM_CHECK
     call calcchecksum ; checksums -> de
     or a
     sbc hl, de
@@ -343,8 +345,9 @@ blockdone:
     call printword
     call writeout
     jp fail
-.checksum_ok:    
-*/
+.checksum_ok:
+  ENDIF
+
     ; advance the readypage so it can be shown
     ld a, (renderpageidx)
     ld (readypageidx), a ; mark current renderpage as ready
@@ -596,9 +599,9 @@ cmdline
 ;    db "/flx/hw.flx", 0
 
 
-/*
+  IFDEF DO_CHECKSUM_CHECK
     INCLUDE checksum.asm
-*/    
+  ENDIF
     INCLUDE isr.asm
     INCLUDE cachedio.asm
     INCLUDE decoders.asm
