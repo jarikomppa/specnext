@@ -241,17 +241,13 @@ screencopyfromfile:
 ; bc = bytes to fill
 ; ix = prev frame offset
 screencopyfromprevframe:
-    push bc
-    push de
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, .nonzero
-    pop de
-    pop bc
-    ret
-    
-.nonzero:
+    ret z
+
+    push bc
+    push de
     ; map framebuffer bank
     ld a, d
     rlca
@@ -299,9 +295,7 @@ screencopyfromprevframe:
     ld d, a
     ld hl, 0x6000 ; mmu3
     add hl, de
-    push ix
     call readprevframe
-    pop ix
     pop hl
     pop bc
     pop de
@@ -313,93 +307,63 @@ screencopyfromprevframe:
     add hl, bc ; add de, bc - increment screen offset
     ex de, hl  ;
 
-    add ix, bc
-
     ld bc, hl  ; fake-ok - remaining bytes
     
     jp screencopyfromprevframe ; let's go again
 
 ; hl = target address
-; bc = bytes
-; ix = source offset
+; bc = bytes > 0
+; ix = source offset (returns advanced by +bc)
 readprevframe:
-    ; check if we're filling zero bytes
-    ld a, b
-    or c
-    jr nz, .nonzero
-    ret
-    
-.nonzero:
-    push hl ; stack: target addr
-    push bc ; stack: bytecount, target address
-    push ix 
-    pop de  
+    push bc
+    push hl ; stack: target addr, origcount
+
+    ld e, ixl
+    ld a, ixh
+    and 0x1f
+    ld d, a ; de = source offset masked to 8ki
+
     ; map framebuffer bank
-    ld a, d
+    xor ixh ; a = upper 3 bits of source offset
     rlca
     rlca
     rlca
-    and 7
-    ld hl, previousframe
-    add a, (hl)
+.pf:add a, 123 ; previousframe variable (self-modify storage)
     nextreg NEXTREG_MMU5, a
     
     ; calculate max span
-    push ix
-    pop de
-    ld a, d
-    and 0x1f ; mask to 8k
-    ld d, a
     ld hl, 0x2000
     or a
     sbc hl, de    
-    ; hl = max span
-    pop bc  ; stack: target address
-    push bc
-    push hl ; stack: maxspan, bytecount, targetaddr
-    or a
-    sbc hl, bc   
+    ; hl = max span, carry=0
+    sbc hl, bc
+    add hl, bc
     jr nc, .okspan
-    pop bc  ; stack: bytecount, targetaddr
-    push bc ; stack: maxspan, bytecount, targetaddr
-.okspan:    
-    pop hl ; stack: bytecount, targetaddr
-    pop hl ; stack: targetaddr
-    pop af ; stack: -
+    ld bc, hl ; fake-ok - clamp bc to maxspan
+.okspan:
+    ; now bc = count, de = masked prevframe addr
 
-    ; now bc = count, hl = original count, de = masked prevframe addr 
-
-    push bc
-    push hl
-    push af ; stack = count, origcount, targetaddr
-
-    ; calculate output address
+    ; calculate source address
     ld hl, 0xa000 ; mmu5
     add hl, de
     pop de
-    push de
     ; hl = source address
     ; de = dest address
     ; bc = count
 
     call memcpy
+    add ix, bc ; advance source offset
+
     ld a, (filepage)
     nextreg NEXTREG_MMU5, a
-    pop de ; dest addr
     pop hl ; origcount
-    pop bc ; count
     or a
     sbc hl, bc
     ret z ; all bytes filled
-;    ret
 
-    add ix, bc ; increment source offset
+    ld bc, hl  ; fake-ok - remaining bytes
+    ex de, hl
 
-    ex de, hl  
-    add hl, bc ; increment destination offset
-
-    ld bc, de  ; fake-ok - remaining bytes
-    
 ; hl = target address
 ; bc = bytes
 ; ix = source offset
