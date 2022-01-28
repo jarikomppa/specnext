@@ -1,55 +1,63 @@
 setupdma:
-    ld a, 0b01010100; // R1-write A time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // 2t
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b01010000; // R2-write B time byte, increment, to memory, bitmask
-    out (PORT_DATAGEAR_DMA), a
-    ld a, 0b00000010; // R2-Cycle length port B
-    out (PORT_DATAGEAR_DMA), a
+    ld hl, .initdata
+    ld bc, PORT_DATAGEAR_DMA | (.datasize<<8)
+    otir
     ret
+.initdata:
+    db  $C3,$C3,$C3,$C3,$C3,$C3 ; reset DMA from any possible state (6x reset command)
+    db  %10'0'0'0010            ; WR5 = stop on end of block, /CE only
+    db  %1'0'000000             ; WR3 = all extra features [of real chip] disabled
+    db  %0'1'01'0'100           ; WR1 = A address ++, memory
+    db  2                       ; + custom 2T timing
+    db  %0'1'01'0'000           ; WR2 = B address ++, memory
+    db  2                       ; + custom 2T timing
+.datasize: EQU $ - .initdata
 
 ; ------------------------------------------------------------------------
 
-; de dest
-; hl src
-; bc bytes
+; de dest (returns advanced by +bc)
+; hl src (returns advanced by +bc)
+; bc bytes (is preserved)
+; LDIR cost is 52 + 21*bc @3.5MHz ; 62 + 24*bc @28MHz (+read_wait)
+; DMA cost is 233 + 4*bc @3.5MHz ; 279 + 5*bc @28MHz (+read_wait)
 memcpy:
-    push hl
-    ld hl, 20 ; todo: figure out actual break-even point
-    or a
-    sbc hl, bc
-    jr c, .dma_memcpy
-    pop hl
+    ; check BC against break-even point (LDIR vs DMA)
+    ld a, 12 ; break-even is 12 @28MHz, 11 @3.5MHz
+    cp c
+    sbc a, a                    ; 00 for C <0..12>, FF for C <13..FF>
+    or b                        ; non-zero for BC > 12
+    jr nz, .dma_memcpy
+    push bc
     ldir
+    pop bc
     ret
 .dma_memcpy:
-    pop hl
-    push de
-    push bc
-    push hl
-    ld bc, PORT_DATAGEAR_DMA
-    ld a, 0x83; // DMA_DISABLE
-    out (PORT_DATAGEAR_DMA), a
+    ; this code style using `out (n),a` is actually reasonably fast and preserves HL,DE,BC for free
     ld a, 0b01111101; // R0-Transfer mode, A -> B, write adress + block length
     out (PORT_DATAGEAR_DMA), a
-    pop hl
-    out (c), l ; source
-    out (c), h ; source
-    pop hl
-    out (c), l ; count
-    out (c), h ; count
+    ld a, l ; source
+    out (PORT_DATAGEAR_DMA), a
+    ld a, h ; source
+    out (PORT_DATAGEAR_DMA), a
+    ld a, c ; count
+    out (PORT_DATAGEAR_DMA), a
+    ld a, b ; count
+    out (PORT_DATAGEAR_DMA), a
     ld a, 0b10101101; // R4-Continuous mode (use this for block transfer), write dest adress
     out (PORT_DATAGEAR_DMA), a
-    pop hl
-    out (c), l ; dest
-    out (c), h ; dest
-    ld a, 0b10000010; // R5-Restart on end of block, RDY active LOW
+    ld a, e ; dest
+    out (PORT_DATAGEAR_DMA), a
+    ld a, d ; dest
     out (PORT_DATAGEAR_DMA), a
     ld a, 0b11001111; // R6-Load
     out (PORT_DATAGEAR_DMA), a
     ld a, 0x87;       // R6-Enable DMA
     out (PORT_DATAGEAR_DMA), a
+    ; advance HL,DE the same way how LDIR would, but BC is preserved
+    add hl, bc
+    ex de, hl
+    add hl, bc
+    ex de, hl
     ret
 
 ; ------------------------------------------------------------------------
@@ -233,17 +241,13 @@ screencopyfromfile:
 ; bc = bytes to fill
 ; ix = prev frame offset
 screencopyfromprevframe:
-    push bc
-    push de
     ; check if we're filling zero bytes
     ld a, b
     or c
-    jr nz, .nonzero
-    pop de
-    pop bc
-    ret
-    
-.nonzero:
+    ret z
+
+    push bc ; preserve origcount
+    push de ; and screen offset
     ; map framebuffer bank
     ld a, d
     rlca
@@ -254,145 +258,83 @@ screencopyfromprevframe:
     add a, (hl)
     nextreg NEXTREG_MMU3, a
     
-    ; calculate max span
-    pop de
-    push de
-    ld a, d
-    and 0x1f ; mask to 8k
-    ld d, a
-    ld hl, 0x2000
-    or a
-    sbc hl, de    
-    ; hl = max span
-    pop de
-    pop bc
-    push bc
-    push de
-    push hl
-    or a
-    sbc hl, bc   
-    jr nc, .okspan
-    pop bc  ; bc = max span
-    push bc
-.okspan:    
-    pop hl ; throw-away unused maxspan
-    pop de
-    pop hl ; original byte count    
-
-    ; now bc = count, hl = original count, de = screen ofs
-
-    push de
-    push bc
-    push hl
-
-    ; calculate output address
+    ; calculate max span and output address masked to MMU3 0x6000 region
+    ld hl, 0x2000 + 0x6000
     ld a, d
     and 0x1f
+    or 0x60 ; carry = 0
     ld d, a
-    ld hl, 0x6000 ; mmu3
-    add hl, de
-    push ix
+    sbc hl, de ; hl = max span, carry = 0
+    sbc hl, bc
+    jr nc, .okspan
+    add hl, bc
+    ld bc, hl ; fake-ok - clamp bc to maxspan
+.okspan:
+    ; now bc = count, de = output address, stack: screen ofs, original count
+
+    push bc
     call readprevframe
-    pop ix
-    pop hl
     pop bc
-    pop de
-    or a
+    pop hl
+    add hl, bc ; advance screen offset, carry = 0
+    ex de,hl
+    pop hl
     sbc hl, bc
     ret z ; all bytes filled
 
-    ex de, hl  ;
-    add hl, bc ; add de, bc - increment screen offset
-    ex de, hl  ;
-
-    add ix, bc
-
     ld bc, hl  ; fake-ok - remaining bytes
-    
+
     jp screencopyfromprevframe ; let's go again
 
-; hl = target address
-; bc = bytes
-; ix = source offset
+; de = target address (returns advanced by +bc)
+; bc = bytes > 0
+; ix = source offset (returns advanced by +bc)
 readprevframe:
-    ; check if we're filling zero bytes
-    ld a, b
-    or c
-    jr nz, .nonzero
-    ret
-    
-.nonzero:
-    push hl ; stack: target addr
-    push bc ; stack: bytecount, target address
-    push ix 
-    pop de  
+    push bc
+    push de ; stack: target addr, origcount
+
     ; map framebuffer bank
-    ld a, d
+    ld a, ixh
     rlca
     rlca
     rlca
     and 7
-    ld hl, previousframe
-    add a, (hl)
+.pf:add a, 123 ; previousframe variable (self-modify storage)
     nextreg NEXTREG_MMU5, a
     
-    ; calculate max span
-    push ix
-    pop de
-    ld a, d
-    and 0x1f ; mask to 8k
-    ld d, a
-    ld hl, 0x2000
-    or a
-    sbc hl, de    
-    ; hl = max span
-    pop bc  ; stack: target address
-    push bc
-    push hl ; stack: maxspan, bytecount, targetaddr
-    or a
-    sbc hl, bc   
+    ; calculate max span and source address masked to MM5 0xa000 region
+    ld hl, 0x2000 + 0xa000
+    ld e, ixl
+    ld a, ixh
+    and 0x1f
+    or 0xa0 ; carry = 0
+    ld d, a ; de = source offset masked to 8ki at 0xa000
+
+    sbc hl, de ; hl = max span, carry = 0
+    sbc hl, bc
     jr nc, .okspan
-    pop bc  ; stack: bytecount, targetaddr
-    push bc ; stack: maxspan, bytecount, targetaddr
-.okspan:    
-    pop hl ; stack: bytecount, targetaddr
-    pop hl ; stack: targetaddr
-    pop af ; stack: -
-
-    ; now bc = count, hl = original count, de = masked prevframe addr 
-
-    push bc
-    push hl
-    push af ; stack = count, origcount, targetaddr
-
-    ; calculate output address
-    ld hl, 0xa000 ; mmu5
-    add hl, de
+    add hl, bc
+    ld bc, hl ; fake-ok - clamp bc to maxspan
+.okspan:
+    ex de, hl
     pop de
-    push de
+
     ; hl = source address
     ; de = dest address
     ; bc = count
 
     call memcpy
+
+    add ix, bc ; advance source offset, carry = 0
+    pop hl ; origcount
+    sbc hl, bc
     ld a, (filepage)
     nextreg NEXTREG_MMU5, a
-    pop de ; dest addr
-    pop hl ; origcount
-    pop bc ; count
-    or a
-    sbc hl, bc
     ret z ; all bytes filled
-;    ret
 
-    add ix, bc ; increment source offset
+    ld bc, hl  ; fake-ok - remaining bytes
 
-    ex de, hl  
-    add hl, bc ; increment destination offset
-
-    ld bc, de  ; fake-ok - remaining bytes
-    
-; hl = target address
+; de = target address
 ; bc = bytes
 ; ix = source offset
     jp readprevframe ; let's go again
