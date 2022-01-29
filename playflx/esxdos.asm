@@ -10,7 +10,7 @@ allocpage:
 	ret
 
 ;extern unsigned char reservepage(unsigned char page)
-; e = page, output e = page, nc = fail
+; e = page, nc = fail
 reservepage:
     ld      hl, 0x0002 ; reserve zx memory
     exx                             ; place parameters in alternates
@@ -82,3 +82,17 @@ fseek:
     rst     0x8
     .db     0x9f
 	ret
+
+;IN:    B=0 for standard variable, B=1 for array
+;       C=variable number (0=A,1=B...25=Z)
+;       L=array index (0..63) if B=1
+;       H=0 to get variable, 1 to set variable
+;       DE=value (if H=1)
+;OUT(s): Fc=1
+;       DE=value (if H=0)
+;OUT(f): Fc=0
+        ;A=error
+intvar:
+    rst     0x8
+    .dw     0x1c9
+    ret

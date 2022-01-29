@@ -1,10 +1,15 @@
+    MACRO ISKEYDOWN keybyte, keybit
+        ld a, (keydata + keybyte)
+        bit keybit, a
+    ENDM
 
 keydata:
     BLOCK 9, 0
 
 scaninput:
     ld hl, keydata
-    ld bc, 0xfefe ; [0]
+    ld c, 0xfe
+    ld b, c       ; [0]
     ini ; hl = in (c), hl++, b--
     ld b, 0xfd    ; [1]
     ini
@@ -26,11 +31,6 @@ scaninput:
     ld (hl), a    ; [8]
     ret
 
-    MACRO ISKEYDOWN keybyte, keybit
-        ld a, (keydata + keybyte)
-        bit keybit, a
-    ENDM
-
 anykey:
     ld hl, keydata
     ld b, 8 ; don't check for kempston as unconnected joystick may be random
@@ -46,6 +46,7 @@ anykey:
 userinput:
     call scaninput
     ld a, (keyfree)
+    or 0
     jp z, .checkfornoinput
     call anykey
     jp nz, fail

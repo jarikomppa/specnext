@@ -1,9 +1,15 @@
     DEVICE ZXSPECTRUMNEXT
 ;     DEFINE DO_CHECKSUM_CHECK
+;    DEFINE NO_GRAPHICS_SETUP
 ; PlayFLX
 ; FLX video player
 ; by Jari Komppa, http://iki.fi/sol
 ; 2022
+;
+; Special thanks to Peter "Ped7g" Helcmanovsky for optimization
+; and general z80 help. Not to mention SjAsmPlus.
+; And debugging help. And in general.
+
     INCLUDE nextdefs.asm
 
 
@@ -214,6 +220,7 @@ allocframebuffers:
     ld de, isr
     call setupisr7
 
+  IFNDEF NO_GRAPHICS_SETUP
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_DISPLAY_CONTROL_1
     out (c), a
@@ -228,6 +235,7 @@ allocframebuffers:
     nextreg NEXTREG_ENHANCED_ULA_CONTROL, 0x11 ; enable ulanext & layer2 palette 1
     nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
     nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
+  ENDIF
 
 ; read rest of header
 
@@ -242,6 +250,7 @@ allocframebuffers:
     ld bc, 512
     call read
 
+  IFNDEF NO_GRAPHICS_SETUP
 setpalette:
 ; set palette
     nextreg NEXTREG_PALETTE_INDEX, 0 ; start from palette index 0
@@ -259,7 +268,7 @@ setpalette:
     inc hl
     nextreg NEXTREG_ENHANCED_ULA_PALETTE_EXTENSION, a
     djnz .loop2
-
+  ENDIF
 ; ready for animation loop
 
 ; ------------------------------------------------------------------------
