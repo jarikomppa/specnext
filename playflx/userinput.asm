@@ -43,15 +43,19 @@ anykey:
     djnz .loop
     ret
 
+useranimationstop:
+    jp fail
+    
 userinput:
     call scaninput
     ld a, (keyfree)
     or 0
-    jp z, .checkfornoinput
+    jr z, checkfornoinput
     call anykey
-    jp nz, fail
+    jp nz, useranimationstop
     ret
-.checkfornoinput:
+
+checkfornoinput:
     call anykey
     ret nz ; key is still down (from before startup)
     ld a, 1
@@ -62,7 +66,53 @@ userinput:
 ; In : input scheme, allowed input mask
 ; Out: input received, frame number
 gamemode:
+    call scaninput
+    ld a, (keyfree)
+    or 0
+    jr z, checkfornoinput
+notdown0:
+    ld a, (keydata + 2) ; 2, 0 = Q
+    bit 0, a
+    jr nz, notdown1
+    ld a, 1
+    jp gamekeydown
+notdown1:    
+    ld a, (keydata + 1) ; 1, 0 = A
+    bit 0, a
+    jr nz, notdown2
+    ld a, 2
+    jp gamekeydown
+notdown2:
+    ld a, (keydata + 5) ; 5, 1 = O
+    bit 1, a
+    jr nz, notdown3
+    ld a, 3
+    jp gamekeydown
+notdown3:
+    ld a, (keydata + 5) ; 5, 0 = P
+    bit 2, a
+    jr nz, notdown4
+    ld a, 4
+    jp gamekeydown
+notdown4:
+    ld a, (keydata + 7) ; 7, 0 = space
+    bit 0, a
+    jr nz, notdown5
+    ld a, 5
+    jp gamekeydown
+notdown5:
+    ret
     jp userinput
+
+gamekeydown:
+    ld bc, 0x0106 ; array G
+    ld hl, 0x0102 ; write index 2
+    ld d, 0
+    ld e, a
+    call intvar
+    jp useranimationstop
+
 
 keyfree:
     db 0
+

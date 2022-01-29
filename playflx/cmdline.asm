@@ -235,16 +235,192 @@ opt_loop:
     ret
 
 opt_unskippable:
-    ; NOP the input call
-    ld ix, input_call
-    ld (ix + 0), 0
-    ld (ix + 1), 0
-    ld (ix + 2), 0
+    ; Turn the user animation stop jp to a ret
+    ld ix, useranimationstop
+    ld (ix + 0), 0xc9
     ret
 
 opt_game:
-    ld hl, gamemode
+    ; replace input handling with gamemode
+    ld hl, gamemode 
     ld (input_call+1), hl
+
+    ; write out zero as keypress
+    ld bc, 0x0106 ; array G
+    ld hl, 0x0102 ; write index 2
+    ld de, 0
+    call intvar
+
+    ; get and patch the input mode
+    ld bc, 0x0106 ; array G
+    ld hl, 0x0000 ; read index 0
+    call intvar
+    ld a, e ; input mode
+    ; default input mode is qaop+space
+    cp 1 ; wasd+space
+    jp z, .wasd
+    cp 2 ; zxpl+space
+    jp z, .zxpl
+    cp 3 ; kempston
+    jp z, .kempston
+    cp 4 ; sinclair left
+    jp z, .sinclair1
+    cp 5 ; sinclair right
+    jp z, .sinclair2
+    cp 6 ; cursor
+    jp z, .cursor
+    jp .inputmodedone
+
+; qaop+space  udlrf
+; wasd+space  uldrf
+.wasd:
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*1+7  ; bit 1 = 8*1    up
+    ld (ix+16), 0x40+8*1+7 ; bit 1 = 8*1    down
+    ld (ix+28), 0x40+8*0+7 ; bit 0 = 8*0    left
+    ld (ix+40), 0x40+8*2+7 ; bit 2 = 8*2    right
+    ld (ix+52), 0x40+8*0+7 ; bit 0 = 8*0    fire
+    ld hl, keydata + 2 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 1 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 1 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 1 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 7 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+; zxpl+space  lrudf
+.zxpl:
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*0+7  ; bit 0 = 8*0    up
+    ld (ix+16), 0x40+8*1+7 ; bit 1 = 8*1    down
+    ld (ix+28), 0x40+8*1+7 ; bit 1 = 8*1    left
+    ld (ix+40), 0x40+8*2+7 ; bit 2 = 8*2    right
+    ld (ix+52), 0x40+8*0+7 ; bit 0 = 8*0    fire
+    ld hl, keydata + 5 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 6 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 0 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 0 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 7 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+; kempston 000FUDLR (bits)
+.kempston:
+    ld a, 9
+    ld (anykey + 4), a ; include kempston in "anykey"
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*3+7  ; bit 3 = 8*3    up
+    ld (ix+16), 0x40+8*2+7 ; bit 2 = 8*2    down
+    ld (ix+28), 0x40+8*1+7 ; bit 1 = 8*1    left
+    ld (ix+40), 0x40+8*0+7 ; bit 0 = 8*0    right
+    ld (ix+52), 0x40+8*4+7 ; bit 4 = 8*4    fire
+    ld hl, keydata + 8 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 8 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 8 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 8 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 8 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+; sinclair left 12345 lrduf
+.sinclair1:
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*3+7  ; bit 3 = 8*3    up
+    ld (ix+16), 0x40+8*2+7 ; bit 2 = 8*2    down
+    ld (ix+28), 0x40+8*0+7 ; bit 0 = 8*0    left
+    ld (ix+40), 0x40+8*1+7 ; bit 1 = 8*1    right
+    ld (ix+52), 0x40+8*4+7 ; bit 4 = 8*4    fire
+    ld hl, keydata + 3 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 3 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 3 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 3 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 3 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+; sinclair right 67890 lrduf
+.sinclair2:
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*1+7  ; bit 1 = 8*1    up
+    ld (ix+16), 0x40+8*2+7 ; bit 1 = 8*1    down
+    ld (ix+28), 0x40+8*4+7 ; bit 0 = 8*0    left
+    ld (ix+40), 0x40+8*3+7 ; bit 2 = 8*2    right
+    ld (ix+52), 0x40+8*0+7 ; bit 0 = 8*0    fire
+    ld hl, keydata + 4 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 4 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 4 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 4 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 4 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+
+; cursor 56780 ldurf
+.cursor:
+    ld ix, notdown0
+    ld (ix+4), 0x40+8*3+7  ; bit 1 = 8*1    up
+    ld (ix+16), 0x40+8*4+7 ; bit 1 = 8*1    down
+    ld (ix+28), 0x40+8*4+7 ; bit 0 = 8*0    left
+    ld (ix+40), 0x40+8*2+7 ; bit 2 = 8*2    right
+    ld (ix+52), 0x40+8*0+7 ; bit 0 = 8*0    fire
+    ld hl, keydata + 4 ; up
+    ld (notdown0+1), hl
+    ld hl, keydata + 4 ; down
+    ld (notdown1+1), hl
+    ld hl, keydata + 3 ; left
+    ld (notdown2+1), hl
+    ld hl, keydata + 4 ; right
+    ld (notdown3+1), hl
+    ld hl, keydata + 4 ; fire
+    ld (notdown4+1), hl
+    jp .inputmodedone
+
+.inputmodedone:    
+
+    ; get and patch the valid inputs
+    ld bc, 0x0106 ; array G
+    ld hl, 0x0001 ; read index 1
+    call intvar
+    bit 0, e
+    jr z, .input1ok
+    ld ix, notdown0
+    ld (ix+5), 0x18
+.input1ok:
+    bit 1, e
+    jr z, .input2ok
+    ld ix, notdown1
+    ld (ix+5), 0x18
+.input2ok:
+    bit 2, e
+    jr z, .input3ok
+    ld ix, notdown2
+    ld (ix+5), 0x18
+.input3ok:
+    bit 3, e
+    jr z, .input4ok
+    ld ix, notdown3
+    ld (ix+5), 0x18
+.input4ok:
+    bit 4, e
+    jr z, .input5ok
+    ld ix, notdown4
+    ld (ix+5), 0x18
+.input5ok:
     ret
 
 opt_keep:
