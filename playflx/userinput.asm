@@ -3,34 +3,27 @@ keydata:
     BLOCK 9, 0
 
 scaninput:
-    ld bc, 0xfefe
-    in a, (c)
-    ld (keydata + 0), a
-    ld bc, 0xfdfe
-    in a, (c)
-    ld (keydata + 1), a
-    ld bc, 0xfbfe
-    in a, (c)
-    ld (keydata + 2), a
-    ld bc, 0xf7fe
-    in a, (c)
-    ld (keydata + 3), a
-    ld bc, 0xeffe
-    in a, (c)
-    ld (keydata + 4), a
-    ld bc, 0xdffe
-    in a, (c)
-    ld (keydata + 5), a
-    ld bc, 0xbffe
-    in a, (c)
-    ld (keydata + 6), a
-    ld bc, 0x7ffe
-    in a, (c)
-    ld (keydata + 7), a
-    ld bc, 31 ; kempston
+    ld hl, keydata
+    ld bc, 0xfefe ; [0]
+    ini ; hl = in (c), hl++, b--
+    ld b, 0xfd    ; [1]
+    ini
+    ld b, 0xfb    ; [2]
+    ini
+    ld b, 0xf7    ; [3]
+    ini
+    ld b, 0xef    ; [4]
+    ini
+    ld b, 0xdf    ; [5]
+    ini
+    ld b, 0xbf    ; [6]
+    ini
+    ld b, 0x7f    ; [7]
+    ini
+    ld bc, 31     ; kempston
     in a, (c) 
-    xor 0x1f
-    ld (keydata + 8), a
+    xor 0x1f      ; kempston is active-high, let's make it uniform with others
+    ld (hl), a    ; [8]
     ret
 
     MACRO ISKEYDOWN keybyte, keybit
@@ -38,11 +31,37 @@ scaninput:
         bit keybit, a
     ENDM
 
-userinput:
-    call scaninput
-    ISKEYDOWN 7, 0 ; go to space. space. spaaaaceeeeee. to quit.
-    jp z, fail
+anykey:
+    ld hl, keydata
+    ld b, 8 ; don't check for kempston as unconnected joystick may be random
+.loop
+    ld a, (hl)
+    and 0x1f
+    cp 0x1f
+    ret nz
+    inc hl
+    djnz .loop
     ret
 
+userinput:
+    call scaninput
+    ld a, (keyfree)
+    jp z, .checkfornoinput
+    call anykey
+    jp nz, fail
+    ret
+.checkfornoinput:
+    call anykey
+    ret nz ; key is still down (from before startup)
+    ld a, 1
+    ld (keyfree), a
+    ret
+
+; Game mode: various user inputs
+; In : input scheme, allowed input mask
+; Out: input received, frame number
 gamemode:
-    jp userinput    
+    jp userinput
+
+keyfree:
+    db 0
