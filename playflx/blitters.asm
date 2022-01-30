@@ -52,7 +52,9 @@ memcpy:
     ld a, 0b11001111; // R6-Load
     out (PORT_DATAGEAR_DMA), a
     ld a, 0x87;       // R6-Enable DMA
+    IFNDEF PERF_GRIND
     out (PORT_DATAGEAR_DMA), a
+    ENDIF
     ; advance HL,DE the same way how LDIR would, but BC is preserved
     add hl, bc
     ex de, hl

@@ -271,7 +271,7 @@ opt_game:
     jp z, .cursor
     jp .inputmodedone
 
-; qaop+space  udlrf
+; qaop+space  udlrf - default
 ; wasd+space  uldrf
 .wasd:
     ld ix, notdown0

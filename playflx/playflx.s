@@ -1,6 +1,4 @@
     DEVICE ZXSPECTRUMNEXT
-;     DEFINE DO_CHECKSUM_CHECK
-;    DEFINE NO_GRAPHICS_SETUP
 ; PlayFLX
 ; FLX video player
 ; by Jari Komppa, http://iki.fi/sol
@@ -9,6 +7,16 @@
 ; Special thanks to Peter "Ped7g" Helcmanovsky for optimization
 ; and general z80 help. Not to mention SjAsmPlus.
 ; And debugging help. And in general.
+
+; Speciality build options
+;    DEFINE DO_CHECKSUM_CHECK
+;    DEFINE NO_GRAPHICS_SETUP
+;    DEFINE PERF_GRIND    
+
+; Perf run doesn't show output
+    IFDEF PERF_GRIND
+    DEFINE NO_GRAPHICS_SETUP
+    ENDIF
 
     INCLUDE nextdefs.asm
 
@@ -298,6 +306,7 @@ animloop:
     ld (rendertarget), a
 
     ;call printbyte
+    IFNDEF PERF_GRIND
 .wait:
     ;call isrc
     ld a, (showpageidx)
@@ -306,14 +315,7 @@ animloop:
     ei
     jr .wait
 .nowait
-
-;    ; TODO: remember to remove this clear
-;    PUSHALL
-;    ld de, 0
-;    ld bc, 256*192
-;    ld a, 100
-;    call screenfill 
-;    POPALL
+    ENDIF
 
     call readbyte
     ;call printbyte
@@ -383,6 +385,7 @@ loopjumppoint: ; option writes jump here
 
     ; Done with decoding, wait for frames to show
 
+    IFNDEF PERF_GRIND
     ld a, (readypageidx)
     ld e, a
 .waitforfinish:
@@ -390,10 +393,17 @@ loopjumppoint: ; option writes jump here
     ld a, (showpageidx)
     cp e
     jr nz, .waitforfinish ; wait for the isr to progress
+    ENDIF
 
-fail:
+
+fail: ; let's start shutting down
 
     di
+
+    IFDEF PERF_GRIND
+    ld hl, (isrcallcount)
+    call printword
+    ENDIF
 
     call closeisr7
 
@@ -516,6 +526,18 @@ fail_mem:
     jp fail
 
 
+    IFDEF PERF_GRIND
+isr:
+    push hl
+    ld hl, (isrcallcount)
+    inc hl
+    ld (isrcallcount), hl
+    pop hl
+    ei
+    reti
+    ENDIF ; /perf_grind
+
+    IFNDEF PERF_GRIND
 isr:
 ;    reti
 ;isrc:
@@ -563,6 +585,7 @@ isr:
     POPALL
     ei
     reti
+    ENDIF ; /!perf_grind
 
 filehandle:
     db 0
@@ -601,6 +624,11 @@ spstore:
     db 0,0
 cmdline
     dw 0
+
+    IFDEF PERF_GRIND
+isrcallcount:
+    dw 0
+    ENDIF
 
 
 ;fn:
