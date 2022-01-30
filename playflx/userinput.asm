@@ -90,7 +90,7 @@ notdown2:
     jp gamekeydown
 notdown3:
     ld a, (keydata + 5) ; 5, 0 = P
-    bit 2, a
+    bit 0, a
     jr nz, notdown4
     ld a, 4
     jp gamekeydown

@@ -93,6 +93,9 @@ fseek:
 ;OUT(f): Fc=0
         ;A=error
 intvar:
+    exx                             ; place parameters in alternates
+    ld      de, 0x01c9             ; IDE_INTEGER_VAR
+    ld      c, 7                   ; "usually 7, but 0 for some calls"
     rst     0x8
-    .dw     0x1c9
-    ret
+    .db     0x94                   ; +3dos call
+	ret
