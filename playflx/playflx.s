@@ -576,6 +576,11 @@ isr:
     ;call printbyte
     nextreg NEXTREG_LAYER2_RAMPAGE, a
 
+    ; Current frame shown (for game mode)
+    ld hl, (currentframe)
+    inc hl
+    ld (currentframe), hl
+
     ; Clear frame waits here (so if frame wasn't realy we'll show it ASAP)
     ld a, 0
     ld (framewaits), a
@@ -623,6 +628,8 @@ showpageidx:
 spstore:
     db 0,0
 cmdline
+    dw 0
+currentframe
     dw 0
 
     IFDEF PERF_GRIND

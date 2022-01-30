@@ -110,6 +110,11 @@ gamekeydown:
     ld d, 0
     ld e, a
     call intvar
+    ld bc, 0x0106 ; array G
+    ld hl, 0x0103 ; write index 3
+    ld de, (currentframe)
+    call intvar
+
     jp useranimationstop
 
 
