@@ -252,8 +252,6 @@ timestamptomins:
     ret
 
 nortc:
-    pop hl
-nortc2:    
     ld hl, rtcfailmsg
     jp printloop
 
