@@ -93,6 +93,37 @@
 
     ; now hl:c has minutes:seconds
 
+    ld de, 10000
+    or a
+    sbc hl, de
+    add hl, de
+    jr c, .notover10k
+    jr .over10k
+.notover10k
+    ld de, 1000
+    or a
+    sbc hl, de
+    add hl, de
+    jr c, .notover1k
+    jr .over1k
+.notover1k    
+    ld de, 100
+    or a
+    sbc hl, de
+    add hl, de
+    jr c, .notover100
+    jr .over100
+.notover100
+    ld de, 10
+    or a
+    sbc hl, de
+    add hl, de
+    jr c, .notover10
+    jr .over10
+.notover10
+    jp .over1
+
+.over10k:
     ld a, '0'-1
     ld de, 10000
     or a
@@ -101,11 +132,9 @@
     sbc hl, de
     jr nc, .l10k
     add hl, de
-    cp a, "0"
-    jr z, .skipzero10k
     rst 16
-.skipzero10k:
 
+.over1k:
     ld a, '0'-1
     ld de, 1000
     or a
@@ -114,11 +143,9 @@
     sbc hl, de
     jr nc, .l1k
     add hl, de
-    cp a, "0"
-    jr z, .skipzero1k
     rst 16
-.skipzero1k:
 
+.over100:
     ld a, '0'-1
     ld de, 100
     or a
@@ -127,11 +154,9 @@
     sbc hl, de
     jr nc, .l100
     add hl, de
-    cp a, "0"
-    jr z, .skipzero100
     rst 16
-.skipzero100:
 
+.over10:
     ld a, '0'-1
     ld de, 10
     or a
@@ -140,11 +165,9 @@
     sbc hl, de
     jr nc, .l10
     add hl, de
-    cp a, "0"
-    jr z, .skipzero10
     rst 16
-.skipzero10:
 
+.over1:
     ld a, '0'-1
     ld de, 1
     or a
@@ -271,7 +294,7 @@ notnext:
 
 helptext:
        ;12345678901234567890123456789012
-    db "DT v0.1 by Jari Komppa\r"
+    db "DT v0.1.1 by Jari Komppa\r"
     db "http://iki.fi/sol\r"
     db "Time delta calculator\r\r"
     db "SYNOPSIS:\r"
