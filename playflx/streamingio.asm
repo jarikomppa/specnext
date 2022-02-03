@@ -3,17 +3,13 @@
 ; out: a
 readbyte:
     push hl
-    push bc
-    ld hl, 512 + 0xa000
-    ld bc, (fileindex)
-    or a    
-    sbc hl, bc
-    call z, nextfileblock
-    ld hl, (fileindex)
-    ld a, (hl)  
+    ld hl, (fileindex) ; if 0xa200, the buffer is exhausted and needs to read next block
+    bit 1, h
+    res 1, h ; resets 0xa200 -> 0xa000
+    call nz, nextfileblock
+    ld a, (hl)
     inc hl
     ld (fileindex), hl
-    pop bc
     pop hl
     ret
 
@@ -34,10 +30,7 @@ read:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, .doread
-    call nextfileblock
-    ld hl, 8192
-.doread:
+    call z, nextfileblock_hl512
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -82,10 +75,7 @@ skipbytes:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, .doskip
-    call nextfileblock
-    ld hl, 512
-.doskip:
+    call z, nextfileblock_hl512
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -173,28 +163,29 @@ startfileblock:
     jp c, streaming_failed4
     ret
 
+nextfileblock_hl512:
+    ld hl, 512
 nextfileblock:
     push af
     push hl
     push bc
     push de
-    ld bc, 0x00eb
+    ld c, 0xeb
 waittoken: ; wait for new data block to be ready
     in a,(c)
-    cp 0xff
+    inc a
     jr z, waittoken    
-    ; a should be 0xfe now, we probably should check for that..
+    ; a should be 0xfe+1 now, we probably should check for that..
     ld hl, 0xa000
+    ld (fileindex), hl
 ;   INI = (hl)=(c), hl++, b--
 ;   move this 1KB of INI elsewhere (generate them)
     .512 ini
     in a, (c)       ; skip crc 1/2 (needs (n)op between)
-    ld hl, 0xa000
-    ld (fileindex), hl
-    in a, (c)       ; skip crc 2/2
     ld hl, (blocksleft)
     dec hl
     ld (blocksleft), hl
+    in a, (c)       ; skip crc 2/2
     ld a, h
     or l
     call z, nextfilemapblock
