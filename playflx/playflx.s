@@ -38,6 +38,9 @@ SCRATCH EQU 0x8000
 ;FILEBUF EQU 0x8000 ; 512 bytes buf, 1024+1 bytes INI+ret
 ;STACKADDR EQU 0x8D00 ; ..I guess?
 
+    MMU DOTADDR, $DF ; hard-wired mapping to match map file with CSpect debugger
+    CSPECTMAP playflx.map
+
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
     org     DOTADDR
