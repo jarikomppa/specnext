@@ -194,7 +194,6 @@ screencopyfromfile:
     ; now bc = count, de = output address, stack: screen ofs, original count
 
     push bc
-    ex de, hl
     call read
     pop bc
     pop hl

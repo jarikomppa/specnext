@@ -263,7 +263,7 @@ allocframebuffers:
 
 ; next up: 512 bytes of palette
 
-    ld hl, SCRATCH
+    ld de, SCRATCH
     ld bc, 512
     call read
 
