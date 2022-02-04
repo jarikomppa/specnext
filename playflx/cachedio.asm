@@ -2,7 +2,7 @@
 readbyte:
     push hl
     push bc
-    ld hl, 8192 + 0xa000
+    ld hl, 512 + 0xa000
     ld bc, (fileindex)
     or a    
     sbc hl, bc
@@ -28,13 +28,13 @@ readword:
 read:
     push hl
     push bc
-    ld hl, 8192 + 0xa000
+    ld hl, 512 + 0xa000
     ld bc, (fileindex)
     or a
     sbc hl, bc
     jr nz, .doread
     call nextfileblock
-    ld hl, 8192
+    ld hl, 512
 .doread:
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
@@ -78,13 +78,13 @@ read:
 ; bc = bytes
 skipbytes:
     push bc
-    ld hl, 8192 + 0xa000
+    ld hl, 512 + 0xa000
     ld bc, (fileindex)
     or a
     sbc hl, bc
     jr nz, .doskip
     call nextfileblock
-    ld hl, 8192
+    ld hl, 512
 .doskip:
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
@@ -118,7 +118,7 @@ nextfileblock:
     push de
     ld a, (filehandle)
     ld hl, 0xa000 ; mmu5
-    ld bc, 8192
+    ld bc, 512
     call fread
     ld hl, 0xa000
     ld (fileindex), hl
@@ -126,4 +126,9 @@ nextfileblock:
     pop bc
     pop hl
     pop af
+    ret
+
+startstream:
+restartstream:
+endstream:
     ret

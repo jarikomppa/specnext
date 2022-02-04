@@ -146,7 +146,12 @@ startstream:
     jp c, streaming_failed3 ; too many entries
 
     ld hl, filemap
+    ld (filemapptr), hl
+    call startfileblock
+    ret
 
+startfileblock:
+    ld hl, (filemapptr)
     ld e, (hl)
     inc hl
     ld d, (hl)
@@ -189,11 +194,31 @@ waittoken: ; wait for new data block to be ready
     ld hl, 0xa000
     ld (fileindex), hl
     in a, (c)       ; skip crc 2/2
+    ld hl, (blocksleft)
+    dec hl
+    ld (blocksleft), hl
+    ld a, h
+    or l
+    call z, nextfilemapblock
     pop de
     pop bc
     pop hl
     pop af
     ret
+
+nextfilemapblock:
+    call endstream
+    call startfileblock
+    ret
+
+restartstream:
+    ld a, (filehandle)
+    ld hl, SCRATCH
+    ld bc, 1
+    call fread ; streaming api wants us to read a byte
+    call startstream
+    ret
+
 
 streamfailmsg1:
     db "Can't map file.\r",0

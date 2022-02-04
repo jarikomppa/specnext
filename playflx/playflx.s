@@ -505,11 +505,7 @@ loopanim:
     ld hl, 0
     ld a, (filehandle)
     call fseek ; seek to beginning
-    ld a, (filehandle)
-    ld hl, SCRATCH
-    ld bc, 1
-    call fread ; streaming api wants us to read a byte
-    call startstream
+    call restartstream
     call nextfileblock
     ld bc, 4+2+2+512
     call skipbytes
