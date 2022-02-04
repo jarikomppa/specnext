@@ -782,7 +782,7 @@ LZ3C:
 ; ------------------------------------------------------------------------
 SAMEFRAME: ;chunktype = 0;  printf("s"); break;
     call readword ; hl = bytes in block; ignored, as it's 0
-    ld de, 0 ; screen offset
+    ex de, hl ; screen offset 0
     ld ix, 0 ; source offset
     ld bc, 256*192
     call screencopyfromprevframe
@@ -791,18 +791,17 @@ SAMEFRAME: ;chunktype = 0;  printf("s"); break;
 ; ------------------------------------------------------------------------
 BLACKFRAME: ;chunktype = 13;  printf("b"); break;
     call readword ; hl = bytes in block; ignored, as it's 0
-    ld de, 0 ; screen offset
-    ld bc, 256*192
-    ld a, 0
-    call screenfill
-    jp blockdone
+    xor a
+    jp ONECOLOR.withA
 
 ; ------------------------------------------------------------------------
 ONECOLOR: ;chunktype = 101;  printf("o"); break;
     call readword ; hl = bytes in block; ignored, as it's 1
     call readbyte ; color
-    ld de, 0 ; screen offset
-    ld bc, 256*192    
+.withA:
+    ld bc, 256*192 ; 0xc000
+    ld d, c
+    ld e, c ; screen offset 0
     call screenfill
     jp blockdone
 
