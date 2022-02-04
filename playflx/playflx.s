@@ -28,11 +28,15 @@
 ; 0x8000 mmu4 = stack/scratch
 ; 0xa000 mmu5 = file i/o buffer
 ; 0xc000 mmu6 = dot program copy (for isr to work - isr + rom calls = boom)
-; 0xe000 mmu7 = isr trampoline + empty space up to 0xfe00
+; 0xe000 mmu7 = isr trampoline + empty space up to 0xfd00
 
 DOTADDR EQU 0xc000
 DOTDIFF EQU 0xc000-0x2000
 SCRATCH EQU 0x8000 
+;DOTADDR EQU 0x6000
+;SCRATCH EQU 0x8800 
+;FILEBUF EQU 0x8000 ; 512 bytes buf, 1024+1 bytes INI+ret
+;STACKADDR EQU 0x8D00 ; ..I guess?
 
 ; Dot commands always start at $2000, with HL=address of command tail
 ; (terminated by $00, $0d or ':').
@@ -135,6 +139,8 @@ realstart:
     call    fopen
     jp  c,  fail_open
     ld (filehandle), a
+
+    call startstream
 
     call nextfileblock
 
@@ -407,6 +413,8 @@ fail: ; let's start shutting down
 
     call closeisr7
 
+    call endstream
+
     ld a, (filehandle)
     call fclose
 
@@ -491,11 +499,17 @@ loopanim:
 ; perform loop
 ; note: do this *before* waitforfinish for better results
 ; (audio, if any, may require special handling for loops though)
+    call endstream
     ld bc, 0
     ld de, 0
     ld hl, 0
     ld a, (filehandle)
     call fseek ; seek to beginning
+    ld a, (filehandle)
+    ld hl, SCRATCH
+    ld bc, 1
+    call fread ; streaming api wants us to read a byte
+    call startstream
     call nextfileblock
     ld bc, 4+2+2+512
     call skipbytes
@@ -647,7 +661,8 @@ isrcallcount:
     INCLUDE checksum.asm
   ENDIF
     INCLUDE isr.asm
-    INCLUDE cachedio.asm
+;    INCLUDE cachedio.asm
+    INCLUDE streamingio.asm
     INCLUDE decoders.asm
     INCLUDE blitters.asm
     INCLUDE print.asm
