@@ -25,10 +25,10 @@ readword:
     ld h, a
     ret
 
-; hl = buf
+; de = buf
 ; bc = bytes
 read:
-    push hl
+    push de
     push bc
     ld hl, 512 + 0xa000
     ld bc, (fileindex)
@@ -71,8 +71,6 @@ read:
     ret z      ; If byte count is zero, we're done
 
     ld bc, hl  ; fake-ok - remaining bytes
-    
-    ld hl, de  ; fake-ok - destination address
     
     jp read    ; Go again
 

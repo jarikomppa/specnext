@@ -64,190 +64,123 @@ memcpy:
 
 ; ------------------------------------------------------------------------
 
-; de = screen offset
+; de = screen offset (returns advanced by +bc)
 ; bc = bytes to fill
 ; a = byte to fill
 screenfill:
-    push af
-    ; check if we're filling zero bytes
-    ld a, b
-    or c
-    jr nz, .nonzero
-    pop af
-    ret
-    
-.nonzero:
-    push bc
-    push de
-    ; map framebuffer bank
-    ld a, d
-    rlca
-    rlca
-    rlca
-    and 7
-
-    ld hl, rendertarget
-    add a, (hl)
-    nextreg NEXTREG_MMU3, a
-    
-    ; calculate max span
-    pop de
-    push de
-    ld a, d
-    and 0x1f ; mask to 8k
-    ld d, a
-    ld hl, 0x2000
-    or a
-    sbc hl, de    
-    ; hl = max span
-    pop de
-    push de
-    push hl
-    or a
-    sbc hl, bc   
-    jr nc, .okspan
-    pop bc  ; bc = max span
-    push bc
-.okspan:
-    pop hl ; throw-away unused maxspan
-    pop de
-    pop hl ; original byte count    
-    pop af
-
-    ; now a = color, bc = count, hl = original count, de = screen ofs
-
-    push de
-    push bc
-    push hl
-    push af
-
-    ; calculate output address
-    ld a, d
-    and 0x1f
-    ld d, a
-    ld hl, 0x6000 ; mmu3
-    add hl, de
-    ld de, hl ; fake-ok
-    pop af
-    push af
-    ld (hl), a ; seed memfill
-    inc de
-    dec bc
-    ; if we're filling one byte, make sure we're not filling 64k..
-    ld a, b
-    or c
-    jr z, .skipcopy
-    ;ldir ; (de)=(hl), de++, hl++, bc--
-    call memcpy
-.skipcopy:
-    pop af
-    pop hl
-    pop bc
-    pop de
-    or a
-    sbc hl, bc
-    ; de = screen offset, hl = remaining bytes, bc = bytes just processed, a = color
-    ret z ; all bytes filled
-
-    ex de, hl  ;
-    add hl, bc ; add de, bc - increment screen offset
-    ex de, hl  ;
-
-    ld bc, hl  ; fake-ok - remaining bytes
-
-    jp screenfill ; let's go again
-
-; ------------------------------------------------------------------------
-
-; de = screen offset
-; bc = bytes to fill
-screencopyfromfile:
-    push bc
-    push de
-    ; check if we're filling zero bytes
-    ld a, b
-    or c
-    jr nz, .nonzero
-    pop de
-    pop bc
-    ret
-    
-.nonzero:
-    ; map framebuffer bank
-    ld a, d
-    rlca
-    rlca
-    rlca
-    and 7
-    ld hl, rendertarget
-    add a, (hl)
-    nextreg NEXTREG_MMU3, a
-    
-    ; calculate max span
-    pop de
-    push de
-    ld a, d
-    and 0x1f ; mask to 8k
-    ld d, a
-    ld hl, 0x2000
-    or a
-    sbc hl, de    
-    ; hl = max span
-    pop de
-    pop bc
-    push bc
-    push de
-    push hl
-    or a
-    sbc hl, bc   
-    jr nc, .okspan
-    pop bc  ; bc = max span
-    push bc
-.okspan:
-    pop hl ; throw-away unused maxspan
-    pop de
-    pop hl ; original byte count    
-
-    ; now bc = count, hl = original count, de = screen ofs
-
-    push de
-    push bc
-    push hl
-
-    ; calculate output address
-    ld a, d
-    and 0x1f
-    ld d, a
-    ld hl, 0x6000 ; mmu3
-    add hl, de
-    call read
-    pop hl
-    pop bc
-    pop de
-    or a
-    sbc hl, bc
-    ret z ; all bytes filled
-
-    ex de, hl  ;
-    add hl, bc ; add de, bc - increment screen offset
-    ex de, hl  ;
-
-    ld bc, hl  ; fake-ok - remaining bytes
-    
-    jp screencopyfromfile ; let's go again
-
-
-; ------------------------------------------------------------------------
-
-; de = screen offset
-; bc = bytes to fill
-; ix = prev frame offset
-screencopyfromprevframe:
+    ld (.a+1), a ; set the self-modify value to seed memcpy
     ; check if we're filling zero bytes
     ld a, b
     or c
     ret z
 
+.nonzerobc:
+    push bc
+    push de
+    ; map framebuffer bank
+    ld a, d
+    rlca
+    rlca
+    rlca
+    and 7
+    ld hl, rendertarget
+    add a, (hl)
+    nextreg NEXTREG_MMU3, a
+    
+    ; calculate max span and output address masked to MMU3 0x6000 region
+    ld hl, 0x2000 + 0x6000
+    ld a, d
+    and 0x1f
+    or 0x60 ; carry = 0
+    ld d, a ; de = output address
+    sbc hl, de ; hl = max span, carry = 0
+    sbc hl, bc
+    jr nc, .okspan
+    add hl, bc
+    ld bc, hl ; fake-ok - clamp bc to maxspan
+.okspan:
+    ; now bc = count, de = output address, stack: screen ofs, original count
+
+    ld hl, de ; fake-ok
+    cpi ; hl++, bc--, PV = (BC!=0) (to detect single byte fill)
+    ex de,hl ; hl = output adr, de = hl+1, bc = count-1
+.a: ld (hl), 0 ; seed memcpy (self-modify value)
+    call pe, memcpy ; if BC!=0 then fill the rest
+    inc bc ; restore bc to fill-count
+
+    pop hl
+    pop de
+    add hl, bc
+    ex de, hl ; de = advanced screen offset, hl = original count, carry = 0
+    sbc hl, bc
+    ret z ; all bytes filled
+
+    ld bc, hl  ; fake-ok - remaining bytes
+
+    jp .nonzerobc ; let's go again
+
+; ------------------------------------------------------------------------
+
+; de = screen offset (returns advanced by +bc)
+; bc = bytes to copy
+screencopyfromfile:
+    ; check if we're copying zero bytes
+    ld a, b
+    or c
+    ret z
+.nonzerobc:
+    push bc
+    push de
+    ; map framebuffer bank
+    ld a, d
+    rlca
+    rlca
+    rlca
+    and 7
+    ld hl, rendertarget
+    add a, (hl)
+    nextreg NEXTREG_MMU3, a
+
+    ; calculate max span and output address masked to MMU3 0x6000 region
+    ld hl, 0x2000 + 0x6000
+    ld a, d
+    and 0x1f
+    or 0x60 ; carry = 0
+    ld d, a
+    sbc hl, de ; hl = max span, carry = 0
+    sbc hl, bc
+    jr nc, .okspan
+    add hl, bc
+    ld bc, hl ; fake-ok - clamp bc to maxspan
+.okspan:
+    ; now bc = count, de = output address, stack: screen ofs, original count
+
+    push bc
+    call read
+    pop bc
+    pop hl
+    add hl, bc ; advance screen offset, carry = 0
+    ex de,hl
+    pop hl
+    sbc hl, bc
+    ret z ; all bytes copied
+
+    ld bc, hl  ; fake-ok - remaining bytes
+    
+    jp .nonzerobc ; let's go again
+
+
+; ------------------------------------------------------------------------
+
+; de = screen offset (returns advanced by +bc)
+; bc = bytes to copy
+; ix = prev frame offset (returns advanced by +bc)
+screencopyfromprevframe:
+    ; check if we're copying zero bytes
+    ld a, b
+    or c
+    ret z
+.nonzerobc:
     push bc ; preserve origcount
     push de ; and screen offset
     ; map framebuffer bank
@@ -282,11 +215,11 @@ screencopyfromprevframe:
     ex de,hl
     pop hl
     sbc hl, bc
-    ret z ; all bytes filled
+    ret z ; all bytes copied
 
     ld bc, hl  ; fake-ok - remaining bytes
 
-    jp screencopyfromprevframe ; let's go again
+    jp .nonzerobc ; let's go again
 
 ; de = target address (returns advanced by +bc)
 ; bc = bytes > 0
@@ -332,7 +265,7 @@ readprevframe:
     sbc hl, bc
     ld a, (filepage)
     nextreg NEXTREG_MMU5, a
-    ret z ; all bytes filled
+    ret z ; all bytes copied
 
     ld bc, hl  ; fake-ok - remaining bytes
 
