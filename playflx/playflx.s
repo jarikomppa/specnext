@@ -30,6 +30,16 @@
 ; 0xc000 mmu6 = dot program copy (for isr to work - isr + rom calls = boom)
 ; 0xe000 mmu7 = isr trampoline + empty space up to 0xfd00
 
+; 0x0000 mmu0 = rom
+; 0x2000 mmu1 = dot program
+; 0x4000 mmu2 = source / must be unmapped for std prints to work
+; 0x6000 mmu3 = dot program copy (for isr to work - isr + rom calls = boom)
+; 0x8000 mmu4 = stack/scratch/file io/isr trampoline
+; 0xa000 mmu5 = dest
+; 0xc000 mmu6 = dest
+; 0xe000 mmu7 = dest
+
+
 DOTADDR EQU 0xc000
 DOTDIFF EQU 0xc000-0x2000
 SCRATCH EQU 0x8000 
@@ -649,11 +659,6 @@ currentframe
 isrcallcount:
     dw 0
     ENDIF
-
-
-;fn:
-    ;db "/flx/output.flx", 0
-;    db "/flx/hw.flx", 0
 
 
   IFDEF DO_CHECKSUM_CHECK
