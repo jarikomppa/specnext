@@ -1,17 +1,13 @@
 ; out: a
 readbyte:
     push hl
-    push bc
-    ld hl, 512 + 0xa000
-    ld bc, (fileindex)
-    or a    
-    sbc hl, bc
-    call z, nextfileblock
-    ld hl, (fileindex)
-    ld a, (hl)  
+    ld hl, (fileindex) ; if 0xa200, the buffer is exhausted and needs to read next block
+    bit 1, h
+    res 1, h ; resets 0xa200 -> 0xa000
+    call nz, nextfileblock
+    ld a, (hl)
     inc hl
     ld (fileindex), hl
-    pop bc
     pop hl
     ret
 
@@ -32,10 +28,7 @@ read:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, .doread
-    call nextfileblock
-    ld hl, 512
-.doread:
+    call z, nextfileblock_hl512
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -80,10 +73,7 @@ skipbytes:
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    jr nz, .doskip
-    call nextfileblock
-    ld hl, 512
-.doskip:
+    call z, nextfileblock_hl512
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -109,6 +99,8 @@ skipbytes:
     jp skipbytes ; Go again
 
 
+nextfileblock_hl512:
+    ld hl, 512
 nextfileblock:
     push af
     push hl
@@ -116,10 +108,9 @@ nextfileblock:
     push de
     ld a, (filehandle)
     ld hl, 0xa000 ; mmu5
+    ld (fileindex), hl
     ld bc, 512
     call fread
-    ld hl, 0xa000
-    ld (fileindex), hl
     pop de
     pop bc
     pop hl
