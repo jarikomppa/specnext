@@ -12,6 +12,7 @@
 ;    DEFINE DO_CHECKSUM_CHECK
 ;    DEFINE NO_GRAPHICS_SETUP
 ;    DEFINE PERF_GRIND    
+;    DEFINE USE_CACHED_IO
 
 ; Perf run doesn't show output
     IFDEF PERF_GRIND
@@ -660,8 +661,11 @@ isrcallcount:
     INCLUDE checksum.asm
   ENDIF
     INCLUDE isr.asm
-;    INCLUDE cachedio.asm
+  IFDEF USE_CACHED_IO
+    INCLUDE cachedio.asm
+  ELSE
     INCLUDE streamingio.asm
+  ENDIF
     INCLUDE decoders.asm
     INCLUDE blitters.asm
     INCLUDE print.asm
