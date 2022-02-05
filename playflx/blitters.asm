@@ -86,11 +86,15 @@ screenfill:
     ld hl, rendertarget
     add a, (hl)
     nextreg DSTMMU, a
+    inc a
+    nextreg DSTMMU+1, a
+    inc a
+    nextreg DSTMMU+2, a
     
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + DESTADDR
+    ld hl, 0x4000 + DESTADDR ; TODO: use 24k instead of 16k
     ld a, d
-    and 0x1f
+    and 0x3f
     or DESTADDRHI ; carry = 0
     ld d, a ; de = output address
     sbc hl, de ; hl = max span, carry = 0
@@ -103,7 +107,7 @@ screenfill:
 
     ld hl, de ; fake-ok
     cpi ; hl++, bc--, PV = (BC!=0) (to detect single byte fill)
-    ex de,hl ; hl = output adr, de = hl+1, bc = count-1
+    ex de, hl ; hl = output adr, de = hl+1, bc = count-1
 .a: ld (hl), 0 ; seed memcpy (self-modify value)
     call pe, memcpy ; if BC!=0 then fill the rest
     inc bc ; restore bc to fill-count
@@ -111,7 +115,7 @@ screenfill:
     pop hl
     pop de
     add hl, bc
-    ex de, hl ; de = advanced screen offset, hl = original count, carry = 0
+    ex de, hl ; de = advance screen offset, hl = original count, carry = 0
     sbc hl, bc
     ret z ; all bytes filled
 
@@ -140,11 +144,13 @@ screencopyfromfile:
     ld hl, rendertarget
     add a, (hl)
     nextreg DSTMMU, a
+    inc a
+    nextreg DSTMMU+1, a
 
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + DESTADDR
+    ld hl, 0x4000 + DESTADDR
     ld a, d
-    and 0x1f
+    and 0x3f
     or DESTADDRHI ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
@@ -192,11 +198,13 @@ screencopyfromprevframe:
     ld hl, rendertarget
     add a, (hl)
     nextreg DSTMMU, a
+    inc a
+    nextreg DSTMMU+1, a
     
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + DESTADDR
+    ld hl, 0x4000 + DESTADDR
     ld a, d
-    and 0x1f
+    and 0x3f
     or DESTADDRHI ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
