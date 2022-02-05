@@ -85,13 +85,13 @@ screenfill:
     and 7
     ld hl, rendertarget
     add a, (hl)
-    nextreg NEXTREG_MMU3, a
+    nextreg DSTMMU, a
     
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + 0x6000
+    ld hl, 0x2000 + DESTADDR
     ld a, d
     and 0x1f
-    or 0x60 ; carry = 0
+    or DESTADDRHI ; carry = 0
     ld d, a ; de = output address
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -139,13 +139,13 @@ screencopyfromfile:
     and 7
     ld hl, rendertarget
     add a, (hl)
-    nextreg NEXTREG_MMU3, a
+    nextreg DSTMMU, a
 
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + 0x6000
+    ld hl, 0x2000 + DESTADDR
     ld a, d
     and 0x1f
-    or 0x60 ; carry = 0
+    or DESTADDRHI ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -191,13 +191,13 @@ screencopyfromprevframe:
     and 7
     ld hl, rendertarget
     add a, (hl)
-    nextreg NEXTREG_MMU3, a
+    nextreg DSTMMU, a
     
     ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x2000 + 0x6000
+    ld hl, 0x2000 + DESTADDR
     ld a, d
     and 0x1f
-    or 0x60 ; carry = 0
+    or DESTADDRHI ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -235,14 +235,14 @@ readprevframe:
     rlca
     and 7
 .pf:add a, 123 ; previousframe variable (self-modify storage)
-    nextreg NEXTREG_MMU5, a
+    nextreg SRCMMU, a
     
     ; calculate max span and source address masked to MM5 0xa000 region
-    ld hl, 0x2000 + 0xa000
+    ld hl, 0x2000 + SRCADDR
     ld e, ixl
     ld a, ixh
     and 0x1f
-    or 0xa0 ; carry = 0
+    or SRCADDRHI ; carry = 0
     ld d, a ; de = source offset masked to 8ki at 0xa000
 
     sbc hl, de ; hl = max span, carry = 0
@@ -264,7 +264,7 @@ readprevframe:
     pop hl ; origcount
     sbc hl, bc
     ld a, (filepage)
-    nextreg NEXTREG_MMU5, a
+    nextreg SRCMMU, a
     ret z ; all bytes copied
 
     ld bc, hl  ; fake-ok - remaining bytes

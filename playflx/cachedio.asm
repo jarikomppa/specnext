@@ -24,7 +24,7 @@ readword:
 read:
     push de
     push bc
-    ld hl, 512 + 0xa000
+    ld hl, 512 + FILEBUF
     ld bc, (fileindex)
     or a
     sbc hl, bc
@@ -69,7 +69,7 @@ read:
 ; bc = bytes
 skipbytes:
     push bc
-    ld hl, 512 + 0xa000
+    ld hl, 512 + FILEBUF
     ld bc, (fileindex)
     or a
     sbc hl, bc
@@ -107,7 +107,7 @@ nextfileblock:
     push bc
     push de
     ld a, (filehandle)
-    ld hl, 0xa000 ; mmu5
+    ld hl, FILEBUF ; mmu5
     ld (fileindex), hl
     ld bc, 512
     call fread

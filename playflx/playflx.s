@@ -21,16 +21,6 @@
 
     INCLUDE nextdefs.asm
 
-
-; 0x0000 mmu0 = rom
-; 0x2000 mmu1 = dot program
-; 0x4000 mmu2 = unmapped for std prints to work
-; 0x6000 mmu3 = 8k framebuffer
-; 0x8000 mmu4 = stack/scratch
-; 0xa000 mmu5 = file i/o buffer
-; 0xc000 mmu6 = dot program copy (for isr to work - isr + rom calls = boom)
-; 0xe000 mmu7 = isr trampoline + empty space up to 0xfd00
-
 ; 0x0000 mmu0 = rom
 ; 0x2000 mmu1 = dot program
 ; 0x4000 mmu2 = source / must be unmapped for std prints to work
@@ -40,14 +30,20 @@
 ; 0xc000 mmu6 = dest
 ; 0xe000 mmu7 = dest
 
+SRCMMU EQU NEXTREG_MMU2
+DOTMMU EQU NEXTREG_MMU3
+ISRMMU EQU NEXTREG_MMU4
+DSTMMU EQU NEXTREG_MMU5 ; & 6 & 7
 
-DOTADDR EQU 0xc000
-DOTDIFF EQU 0xc000-0x2000
-SCRATCH EQU 0x8000 
-;DOTADDR EQU 0x6000
-;SCRATCH EQU 0x8800 
-;FILEBUF EQU 0x8000 ; 512 bytes buf, 1024+1 bytes INI+ret
-;STACKADDR EQU 0x8D00 ; ..I guess?
+DOTADDR EQU 0x6000
+DOTDIFF EQU DOTADDR-0x2000
+SCRATCH EQU 0x8800 
+FILEBUF EQU 0x8000 ; 512 bytes buf, 1024+1 bytes INI+ret
+STACKADDR EQU 0x8d00
+DESTADDR EQU 0xa000
+DESTADDRHI EQU 0xa0
+SRCADDR EQU 0x4000
+SRCADDRHI EQU 0x40
 
     MMU DOTADDR, $DF ; hard-wired mapping to match map file with CSpect debugger
     CSPECTMAP playflx.map
@@ -72,7 +68,7 @@ SCRATCH EQU 0x8000
 
     ; grab mmu6 nextreg
     ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_MMU6
+    ld a, DOTMMU
     out (c), a
     inc b         ; nextreg i/o
     in a, (c)
@@ -89,7 +85,7 @@ SCRATCH EQU 0x8000
     ld a, e
 
     push af
-    nextreg NEXTREG_MMU6, a        ; use the newly allocated page
+    nextreg DOTMMU, a        ; use the newly allocated page
     
     ld (spstore-DOTDIFF), sp
 
@@ -112,25 +108,29 @@ realstart:
     STORENEXTREGMASK NEXTREG_CPU_SPEED, regstore, 3
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
 
-    STORENEXTREG NEXTREG_MMU4, regstore + 13
+    STORENEXTREG ISRMMU, regstore + 2
     call allocpage
     jp nc, fail
     ld a, e
     ld (stackpage), a
-    nextreg NEXTREG_MMU4, a    
-    ld sp, 0xa000
+    nextreg ISRMMU, a
+    ld sp, STACKADDR
 
-    STORENEXTREG NEXTREG_MMU3, regstore + 1
-    STORENEXTREG NEXTREG_MMU5, regstore + 2
-    STORENEXTREG NEXTREG_MMU7, regstore + 4
-    STORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
-    STORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
-    STORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 7
-    STORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 8
-    STORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 9
-    STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
-    STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
-    STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
+    STORENEXTREG NEXTREG_MMU2, regstore + 1
+;    STORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
+;    STORENEXTREG NEXTREG_MMU4, regstore + 2
+    STORENEXTREG NEXTREG_MMU5, regstore + 3
+    STORENEXTREG NEXTREG_MMU6, regstore + 4
+    STORENEXTREG NEXTREG_MMU7, regstore + 5
+
+    STORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 6
+    STORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 7
+    STORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 8
+    STORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 9
+    STORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 10
+    STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 11
+    STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
+    STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
 
     call parsecmdline
 
@@ -246,7 +246,7 @@ allocframebuffers:
     call screenfill 
 
     ld de, isr
-    call setupisr7
+    call setupisr
 
   IFNDEF NO_GRAPHICS_SETUP
     ld bc, 0x243B ; nextreg select
@@ -425,7 +425,7 @@ fail: ; let's start shutting down
     call printword
     ENDIF
 
-    call closeisr7
+    call closeisr
 
     call endstream
 
@@ -454,18 +454,22 @@ freeframebuffers:
     djnz freeframebuffers
 
 
-    RESTORENEXTREG NEXTREG_MMU3, regstore + 1
-    RESTORENEXTREG NEXTREG_MMU5, regstore + 2
-    RESTORENEXTREG NEXTREG_MMU7, regstore + 4
-    RESTORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 5
-    RESTORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 6
-    RESTORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 7
-    RESTORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 8
-    RESTORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 9
-    RESTORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 10
-    RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 11
+    RESTORENEXTREG NEXTREG_MMU2, regstore + 1
+;    RESTORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
+;    RESTORENEXTREG NEXTREG_MMU4, regstore + 2
+    RESTORENEXTREG NEXTREG_MMU5, regstore + 3
+    RESTORENEXTREG NEXTREG_MMU6, regstore + 4
+    RESTORENEXTREG NEXTREG_MMU7, regstore + 5
+
+    RESTORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 6
+    RESTORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 7
+    RESTORENEXTREG NEXTREG_GENERAL_TRANSPARENCY, regstore + 8
+    RESTORENEXTREG NEXTREG_TRANSPARENCY_COLOR_FALLBACK, regstore + 9
+    RESTORENEXTREG NEXTREG_ENHANCED_ULA_CONTROL, regstore + 10
+    RESTORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 11
+    RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
 restore_layer2_rampage: ; for the option not to restore this reg
-    RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 12
+    RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
     RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
 
     ld a, (isrpage)
@@ -475,10 +479,10 @@ restore_layer2_rampage: ; for the option not to restore this reg
     ld a, (stackpage)
     ld e, a
     call freepage
-    RESTORENEXTREG NEXTREG_MMU4, regstore + 13
+    RESTORENEXTREG NEXTREG_MMU4, regstore + 2
 
     jp teardown-DOTDIFF
-teardown:
+teardown:    
     ld sp, (spstore-DOTDIFF)
     pop af
     ld e, a
@@ -490,7 +494,7 @@ teardown:
     .db     0x94                   ; +3dos call
 allocfail:
     pop af
-    nextreg NEXTREG_MMU6, a
+    nextreg DOTMMU, a
 
     pop hl
     pop de
@@ -619,7 +623,7 @@ isr:
 filehandle:
     db 0
 fileindex:
-    dw 0xa000
+    dw FILEBUF
 frames:
     db 0,0
 speed:

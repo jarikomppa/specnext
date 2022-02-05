@@ -1,10 +1,21 @@
-printmsg:
+doprintmsg:
     ld a, (hl)
     and a, a
     ret z
     rst 16
     inc hl
     jr printmsg
+
+printmsg:
+    push bc
+    push af
+    STORENEXTREG NEXTREG_MMU2, regstore + 14
+    RESTORENEXTREG NEXTREG_MMU2, regstore +1
+    call doprintmsg
+    RESTORENEXTREG NEXTREG_MMU2, regstore + 14
+    pop af
+    pop bc
+    ret
 
 hex:
     db "0123456789ABCDEF"

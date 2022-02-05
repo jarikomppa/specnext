@@ -10,8 +10,8 @@ calcchecksum:
     ld hl, rendertarget
     ld a, c
     add a, (hl)
-    nextreg NEXTREG_MMU3, a
-    ld hl, 0x6000 ; mmu3 base address
+    nextreg DSTMMU, a
+    ld hl, DSTADDR ; mmu3 base address
     ld b, 32
 .outer:
     push bc
@@ -55,9 +55,9 @@ writeout:
     push af
     ld a, c
     add a, (hl)
-    nextreg NEXTREG_MMU3, a
+    nextreg DSTMMU, a
     pop af
-    ld hl, 0x6000 ; mmu3 base address
+    ld hl, DSTADDR ; mmu3 base address
     ld bc, 8192
     push af
     call fwrite

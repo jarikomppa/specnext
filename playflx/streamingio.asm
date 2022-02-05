@@ -26,7 +26,7 @@ readword:
 read:
     push de
     push bc
-    ld hl, 512 + 0xa000
+    ld hl, 512 + FILEBUF
     ld bc, (fileindex)
     or a
     sbc hl, bc
@@ -71,7 +71,7 @@ read:
 ; bc = bytes
 skipbytes:
     push bc
-    ld hl, 512 + 0xa000
+    ld hl, 512 + FILEBUF
     ld bc, (fileindex)
     or a
     sbc hl, bc
@@ -176,7 +176,7 @@ waittoken: ; wait for new data block to be ready
     inc a
     jr z, waittoken    
     ; a should be 0xfe+1 now, we probably should check for that..
-    ld hl, 0xa000
+    ld hl, FILEBUF
     ld (fileindex), hl
 ;   INI = (hl)=(c), hl++, b--
 ;   move this 1KB of INI elsewhere (generate them)
