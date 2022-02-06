@@ -159,7 +159,7 @@ screencopyfromfile:
     ; calculate max span and output address masked to MMU3 0x6000 region
     ld hl, 0x4000 + DESTADDR
     ld a, d
-    and 0x3f
+    and 0x1f
     or high DESTADDR ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
@@ -195,55 +195,12 @@ screencopyfromprevframe:
     ld a, b
     or c
     ret z
+    ld a, (rendertarget)
+    ld (.rt+1), a ; self-modify the render target calculation
+
 .nonzerobc:
     push bc ; preserve origcount
     push de ; and screen offset
-    ; map framebuffer bank
-    ld a, d
-    rlca
-    rlca
-    rlca
-    and 7
-    ld hl, rendertarget
-    add a, (hl)
-    nextreg DSTMMU, a
-    inc a
-    nextreg DSTMMU+1, a
-    
-    ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x4000 + DESTADDR
-    ld a, d
-    and 0x3f
-    or high DESTADDR ; carry = 0
-    ld d, a
-    sbc hl, de ; hl = max span, carry = 0
-    sbc hl, bc
-    jr nc, .okspan
-    add hl, bc
-    ld bc, hl ; fake-ok - clamp bc to maxspan
-.okspan:
-    ; now bc = count, de = output address, stack: screen ofs, original count
-
-    push bc
-    call readprevframe
-    pop bc
-    pop hl
-    add hl, bc ; advance screen offset, carry = 0
-    ex de,hl
-    pop hl
-    sbc hl, bc
-    ret z ; all bytes copied
-
-    ld bc, hl  ; fake-ok - remaining bytes
-
-    jp .nonzerobc ; let's go again
-
-; de = target address (returns advanced by +bc)
-; bc = bytes > 0
-; ix = source offset (returns advanced by +bc)
-readprevframe:
-    push bc
-    push de ; stack: target addr, origcount
 
     ; map framebuffer bank
     ld a, ixh
@@ -253,8 +210,8 @@ readprevframe:
     and 7
 .pf:add a, 123 ; previousframe variable (self-modify storage)
     nextreg SRCMMU, a
-    
-    ; calculate max span and source address masked to MM5 0xa000 region
+
+    ; calculate max span and source address masked to MM2 0x4000 region
     ld hl, 0x2000 + SRCADDR
     ld e, ixl
     ld a, ixh
@@ -270,15 +227,34 @@ readprevframe:
 .okspan:
     ex de, hl
     pop de
+    ; hl = source address, de = screen offset, bc = clamped count, stack: original count
 
-    ; hl = source address
-    ; de = dest address
-    ; bc = count
+    ; map framebuffer bank (16ki window, so any source-span always fits)
+    push de
+    ld a, d
+    rlca
+    rlca
+    rlca
+    and 7
+.rt:add a, 0 ; self-modified to value of (rendertarget)
+    nextreg DSTMMU, a
+    inc a
+    nextreg DSTMMU+1, a
+
+    ; calculate target address
+    ld a, d
+    and 0x1f
+    or high DESTADDR ; carry = 0
+    ld d, a
+    ; hl = source address, de = output address, bc = clamped count, stack: screen ofs, original count
 
     call memcpy
 
-    add ix, bc ; advance source offset, carry = 0
-    pop hl ; origcount
+    add ix, bc ; advance source offset
+    pop hl
+    add hl, bc ; advance screen offset, carry = 0
+    ex de,hl
+    pop hl
     sbc hl, bc
     ld a, (filepage)
     nextreg SRCMMU, a
@@ -286,7 +262,4 @@ readprevframe:
 
     ld bc, hl  ; fake-ok - remaining bytes
 
-; de = target address
-; bc = bytes
-; ix = source offset
-    jp readprevframe ; let's go again
+    jp .nonzerobc ; let's go again
