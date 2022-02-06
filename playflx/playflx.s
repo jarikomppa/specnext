@@ -131,6 +131,8 @@ realstart:
     STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 11
     STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
     STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
+    ; 14 used by print
+    STORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 15
 
     call parsecmdline
 
@@ -328,7 +330,6 @@ animloop:
     ;call printbyte
     IFNDEF PERF_GRIND
 .wait:
-    ;call isrc
     ld a, (showpageidx)
     cp e       ; if showpageidx == renderpageidx
     jr nz, .nowait ; wait for the isr to progress
@@ -384,10 +385,7 @@ blockdone:
     ld (readypageidx), a ; mark current renderpage as ready
     ld a, (rendertarget)
     ld (previousframe), a ; current render target is now previous
-    
-input_call:
-    call userinput
-    
+        
     pop bc ; number of frames
     dec bc
     ld a, b
@@ -409,7 +407,6 @@ loopjumppoint: ; option writes jump here
     ld a, (readypageidx)
     ld e, a
 .waitforfinish:
-    ;call isrc
     ld a, (showpageidx)
     cp e
     jr nz, .waitforfinish ; wait for the isr to progress
@@ -470,6 +467,8 @@ freeframebuffers:
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
 restore_layer2_rampage: ; for the option not to restore this reg
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
+    RESTORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 15
+
     RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
 
     ld a, (isrpage)
@@ -563,13 +562,15 @@ isr:
     pop hl
     ei
     reti
+.debugcall: ; needed for self-modifying code from options to compile
+.input_call:; -""-
     ENDIF ; /perf_grind
 
     IFNDEF PERF_GRIND
 isr:
-;    reti
-;isrc:
     PUSHALL
+.input_call:
+    call userinput
     
     ; Wait for N frames
     ld bc, (speed)
@@ -580,6 +581,7 @@ isr:
     ld (framewaits), a
     jp .notready
 .nodelay:
+
     ; If we can, advance to the next frame.
     ld a, (readypageidx)
     ld e, a
@@ -615,10 +617,34 @@ isr:
 
 .notready:
 
+.debugcall:
+    nop
+    nop
+    nop 
+
     POPALL
     ei
     reti
     ENDIF ; /!perf_grind
+
+showdebug:
+    ld a, (showpageidx)
+    ld c, a
+    ld a, (readypageidx)
+    or a
+    sbc c
+    jr nc, .noof
+    ld l, a
+    ld a, (framebuffers)
+    add a, l
+.noof:
+    ld l, 32
+    add a, l
+    ld h, a
+    jp spritepos
+    ;call spritepos
+;    ret
+
 
 filehandle:
     db 0
@@ -631,7 +657,7 @@ speed:
 framewaits:
     db 0
 regstore:
-    BLOCK 16, 0 ; currently 14 used
+    BLOCK 16, 0 ; currently 16 used
 filepage:
     db 0
 isrpage:
@@ -681,3 +707,4 @@ isrcallcount:
     INCLUDE esxdos.asm
     INCLUDE cmdline.asm
     INCLUDE userinput.asm
+    INCLUDE sprite.asm

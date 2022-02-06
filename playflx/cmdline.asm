@@ -36,7 +36,9 @@ helptext:
     db "-p --precache\r"
     db "  Fill all framebuffers at start\r"
     db "-g --game\r"
-    db "  Game mode, read docs for info\r"    
+    db "  Game mode, read docs for info\r"
+    db "-d --debug\r"
+    db "  Show debug info\r"
     db 0
 ;       12345678901234567890123456789012    
 
@@ -224,8 +226,23 @@ opt10_a:dw opt_game
         db opt11_a-opt11
 opt11:  db "--game"
 opt11_a:dw opt_game
+        db opt12_a-opt12
+opt12:  db "-d"
+opt12_a:dw opt_debug
+        db opt13_a-opt13
+opt13:  db "--debug"
+opt13_a:dw opt_debug
         ; end of table
         db 0
+
+opt_debug:
+    call initsprites
+    ld hl, isr.debugcall
+    ld (hl), 0xcd
+    ld hl, showdebug
+    ld (isr.debugcall+1), hl
+    ret
+
 
 opt_loop:
     ld hl, loopanim
@@ -243,7 +260,7 @@ opt_unskippable:
 opt_game:
     ; replace input handling with gamemode
     ld hl, gamemode 
-    ld (input_call+1), hl
+    ld (isr.input_call+1), hl
 
     ; write out zero as keypress
     ld bc, 0x0106 ; array G

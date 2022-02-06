@@ -44,7 +44,10 @@ anykey:
     ret
 
 useranimationstop:
-    jp fail
+    ld hl, fail
+    push hl
+    reti
+;    jp fail
     
 userinput:
     call scaninput
