@@ -112,7 +112,7 @@ realstart:
     call allocpage
     jp nc, fail
     ld a, e
-    ld (stackpage), a
+    ld (isrpage), a
     nextreg ISRMMU, a
     ld sp, STACKADDR
 
@@ -143,12 +143,6 @@ realstart:
     ld a, e
     ld (isrpage), a
     nextreg NEXTREG_MMU7, a    
-
-    call allocpage
-    jp nc, fail
-    ld a, e
-    ld (filepage), a
-    nextreg NEXTREG_MMU5, a    
 
     ld  hl, SCRATCH
     ld  b,  1       ; open existing
@@ -426,10 +420,6 @@ fail: ; let's start shutting down
     ld a, (filehandle)
     call fclose
 
-    ld a, (filepage)
-    ld e, a
-    call freepage
-
     ; free allocated framebuffer pages
     ld hl, allocpages
     ld b, 0
@@ -472,9 +462,6 @@ restore_layer2_rampage: ; for the option not to restore this reg
     ld e, a
     call freepage
 
-    ld a, (stackpage)
-    ld e, a
-    call freepage
     RESTORENEXTREG NEXTREG_MMU4, regstore + 2
 
     jp teardown-DOTDIFF
@@ -651,13 +638,9 @@ speed:
 framewaits:
     db 0
 regstore:
-    BLOCK 16, 0 ; currently 16 used
-filepage:
-    db 0
+    BLOCK 32, 0 ; currently 16 used
 isrpage:
     db 0    
-stackpage:
-    db 0
 framebuffers:
     db 0
 framebufferpage:

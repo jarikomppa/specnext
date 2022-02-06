@@ -256,8 +256,6 @@ screencopyfromprevframe:
     ex de,hl
     pop hl
     sbc hl, bc
-    ld a, (filepage)
-    nextreg SRCMMU, a
     ret z ; all bytes copied
 
     ld bc, hl  ; fake-ok - remaining bytes
