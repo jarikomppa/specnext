@@ -664,7 +664,7 @@ framebufferpage:
     BLOCK 40, 0
 allocpages:
     BLOCK 256, 0
-previousframe: equ readprevframe.pf+1 ; stored in code
+previousframe: equ screencopyfromprevframe.pf+1 ; stored in code
 rendertarget:
     db 0
 renderpageidx:
