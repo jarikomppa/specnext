@@ -95,7 +95,7 @@ screenfill:
     ld hl, 0x4000 + DESTADDR ; TODO: use 24k instead of 16k
     ld a, d
     and 0x3f
-    or DESTADDRHI ; carry = 0
+    or high DESTADDR ; carry = 0
     ld d, a ; de = output address
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -151,7 +151,7 @@ screencopyfromfile:
     ld hl, 0x4000 + DESTADDR
     ld a, d
     and 0x3f
-    or DESTADDRHI ; carry = 0
+    or high DESTADDR ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -205,7 +205,7 @@ screencopyfromprevframe:
     ld hl, 0x4000 + DESTADDR
     ld a, d
     and 0x3f
-    or DESTADDRHI ; carry = 0
+    or high DESTADDR ; carry = 0
     ld d, a
     sbc hl, de ; hl = max span, carry = 0
     sbc hl, bc
@@ -250,7 +250,7 @@ readprevframe:
     ld e, ixl
     ld a, ixh
     and 0x1f
-    or SRCADDRHI ; carry = 0
+    or high SRCADDR ; carry = 0
     ld d, a ; de = source offset masked to 8ki at 0xa000
 
     sbc hl, de ; hl = max span, carry = 0

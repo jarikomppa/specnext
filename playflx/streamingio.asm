@@ -3,9 +3,11 @@
 ; out: a
 readbyte:
     push hl
-    ld hl, (fileindex) ; if 0xa200, the buffer is exhausted and needs to read next block
-    bit 1, h
-    res 1, h ; resets 0xa200 -> 0xa000
+    ld hl, (fileindex) ; if FILEBUF + FILEBUFSZ, the buffer is exhausted and needs to read next block
+    ASSERT ((FILEBUF + FILEBUFSZ) & ~FILEBUFSZ) == FILEBUF
+    ASSERT ((FILEBUF + FILEBUFSZ - 1) & FILEBUFSZ) == 0 ; making sure the `bit + res` trick works
+    bit FILEBUFSZP2-8, h
+    res FILEBUFSZP2-8, h ; resets hl to FILEBUF
     call nz, nextfileblock
     ld a, (hl)
     inc hl
@@ -26,11 +28,11 @@ readword:
 read:
     push de
     push bc
-    ld hl, 512 + FILEBUF
+    ld hl, FILEBUF + FILEBUFSZ
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    call z, nextfileblock_hl512
+    call z, nextfileblock_hl_fbsz
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -71,11 +73,11 @@ read:
 ; bc = bytes
 skipbytes:
     push bc
-    ld hl, 512 + FILEBUF
+    ld hl, FILEBUF + FILEBUFSZ
     ld bc, (fileindex)
     or a
     sbc hl, bc
-    call z, nextfileblock_hl512
+    call z, nextfileblock_hl_fbsz
     ; hl = max bytes to read at once
     pop bc  ; desired copy length
     push bc
@@ -161,8 +163,8 @@ startfileblock:
     jp c, streaming_failed4
     ret
 
-nextfileblock_hl512:
-    ld hl, 512
+nextfileblock_hl_fbsz:
+    ld hl, FILEBUFSZ
 nextfileblock:
     push af
     push hl
@@ -178,7 +180,7 @@ waittoken: ; wait for new data block to be ready
     ld (fileindex), hl
 ;   INI = (hl)=(c), hl++, b--
 ;   move this 1KB of INI elsewhere (generate them)
-    .512 ini
+    .(FILEBUFSZ) ini
     in a, (c)       ; skip crc 1/2 (needs (n)op between)
     ld hl, (blocksleft)
     dec hl
