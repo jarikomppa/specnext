@@ -5,7 +5,7 @@ setupisr::
     ld  de,     0x8e00 ; im2 vector table start
     ld  hl,     0x8d8d ; where interrupt will point at
     ld  a,      d 
-    ld  i,      a        ; interrupt will hop to 0xfe?? where ?? is random 
+    ld  i,      a        ; interrupt will hop to 0x8e?? where ?? is random 
     ld  a,      l        ; we need 257 copies of the address
 .rep:
     ld  (de),   a 
@@ -21,8 +21,4 @@ setupisr::
     inc hl
     ld  (hl),   d
     im  2           ; set the interrupt mode (remember to change back before you exit)
-    ret
-
-closeisr::
-    im  1
     ret

@@ -12,13 +12,15 @@ printerrmsg:
     call printmsg
     jp fail
 
+printpagetemp:
+    db 0
 printmsg:
     push bc
     push af
-    STORENEXTREG NEXTREG_MMU2, regstore + 14
-    RESTORENEXTREG NEXTREG_MMU2, regstore +1
+    STORENEXTREG NEXTREG_MMU2, printpagetemp
+    RESTORENEXTREG NEXTREG_MMU2, regstore + 1
     call doprintmsg
-    RESTORENEXTREG NEXTREG_MMU2, regstore + 14
+    RESTORENEXTREG NEXTREG_MMU2, printpagetemp
     pop af
     pop bc
     ret

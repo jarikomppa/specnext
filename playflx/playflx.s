@@ -66,7 +66,7 @@ SRCADDR EQU 0x4000
     push de
     push hl
 
-    ; grab mmu6 nextreg
+    ; grab mmu nextreg for dot copy
     ld bc, 0x243B ; nextreg select
     ld a, DOTMMU
     out (c), a
@@ -118,7 +118,7 @@ realstart:
 
     STORENEXTREG NEXTREG_MMU2, regstore + 1
 ;    STORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
-;    STORENEXTREG NEXTREG_MMU4, regstore + 2
+;    STORENEXTREG NEXTREG_MMU4, regstore + 2 .. done above before alloc
     STORENEXTREG NEXTREG_MMU5, regstore + 3
     STORENEXTREG NEXTREG_MMU6, regstore + 4
     STORENEXTREG NEXTREG_MMU7, regstore + 5
@@ -131,18 +131,11 @@ realstart:
     STORENEXTREG NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, regstore + 11
     STORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
     STORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
-    ; 14 used by print
-    STORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 15
+    STORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 14
 
     call parsecmdline
 
     call setupdma
-
-    call allocpage
-    jp nc, fail
-    ld a, e
-    ld (isrpage), a
-    nextreg NEXTREG_MMU7, a    
 
     ld  hl, SCRATCH
     ld  b,  1       ; open existing
@@ -407,13 +400,12 @@ loopjumppoint: ; option writes jump here
 fail: ; let's start shutting down
 
     di
+    im 1
 
     IFDEF PERF_GRIND
     ld hl, (isrcallcount)
     call printword
-    ENDIF
-
-    call closeisr
+    ENDIF    
 
     call endstream
 
@@ -440,7 +432,7 @@ freeframebuffers:
 
     RESTORENEXTREG NEXTREG_MMU2, regstore + 1
 ;    RESTORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
-;    RESTORENEXTREG NEXTREG_MMU4, regstore + 2
+;    RESTORENEXTREG NEXTREG_MMU4, regstore + 2 .. done below as last thing
     RESTORENEXTREG NEXTREG_MMU5, regstore + 3
     RESTORENEXTREG NEXTREG_MMU6, regstore + 4
     RESTORENEXTREG NEXTREG_MMU7, regstore + 5
@@ -454,7 +446,7 @@ freeframebuffers:
     RESTORENEXTREG NEXTREG_ULA_CONTROL, regstore + 12
 restore_layer2_rampage: ; for the option not to restore this reg
     RESTORENEXTREG NEXTREG_LAYER2_RAMPAGE, regstore + 13
-    RESTORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 15
+    RESTORENEXTREG NEXTREG_SPRITE_AND_LAYERS, regstore + 14
 
     RESTORENEXTREG NEXTREG_CPU_SPEED, regstore
 
@@ -462,7 +454,7 @@ restore_layer2_rampage: ; for the option not to restore this reg
     ld e, a
     call freepage
 
-    RESTORENEXTREG NEXTREG_MMU4, regstore + 2
+    RESTORENEXTREG ISRMMU, regstore + 2
 
     jp teardown-DOTDIFF
 teardown:    
@@ -551,6 +543,7 @@ isr:
 isr:
     PUSHALL
 .input_call:
+
     call userinput
     
     ; Wait for N frames
@@ -638,7 +631,7 @@ speed:
 framewaits:
     db 0
 regstore:
-    BLOCK 32, 0 ; currently 16 used
+    BLOCK 32, 0 ; currently 15 used
 isrpage:
     db 0    
 framebuffers:
