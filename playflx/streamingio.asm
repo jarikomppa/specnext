@@ -128,10 +128,11 @@ startstream:
     jp c, streaming_failed1 ; call failed
     ld a, d
     or e
-    jp z, streaming_failed2 ; no entries
-    ld a, d
-    or e
     jp z, streaming_failed3 ; too many entries
+    ld bc, filemap
+    or a
+    sbc hl, bc
+    jp z, streaming_failed2 ; no entries
 
     ld hl, filemap
     ld (filemapptr), hl
@@ -219,17 +220,13 @@ streamfailmsg4:
     db "Streaming failed.\r",0
 streaming_failed1:
     ld hl, streamfailmsg1
-    call printmsg
-    jp fail
+    jp printerrmsg
 streaming_failed2:
     ld hl, streamfailmsg2
-    call printmsg
-    jp fail
+    jp printerrmsg
 streaming_failed3:
     ld hl, streamfailmsg3
-    call printmsg
-    jp fail    
+    jp printerrmsg
 streaming_failed4:
     ld hl, streamfailmsg4
-    call printmsg
-    jp fail        
+    jp printerrmsg

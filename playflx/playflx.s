@@ -228,9 +228,6 @@ allocframebuffers:
     cp 2
     jp c, fail_mem
 
-;    ld a, 29
-;    ld (framebuffers), a
-
     ; set rendertarget and previous to some legal value
     ld a, (renderpageidx)
     ld c, a
@@ -535,22 +532,19 @@ fail_open_msg:
     db "File open failed\r", 0
 fail_open:
     ld hl, fail_open_msg
-    call printmsg
-    jp fail
+    jp printerrmsg
 
 fail_type_msg:
     db "Wrong file type\r",0
 fail_type:
     ld hl, fail_type_msg
-    call printmsg
-    jp fail
+    jp printerrmsg
 
 fail_mem_msg:
     db "Can't allocate framebuffers\r",0
 fail_mem:
     ld hl, fail_mem_msg
-    call printmsg
-    jp fail
+    jp printerrmsg
 
 
     IFDEF PERF_GRIND

@@ -6,6 +6,12 @@ doprintmsg:
     inc hl
     jr printmsg
 
+printerrmsg:
+    im 1
+    ei
+    call printmsg
+    jp fail
+
 printmsg:
     push bc
     push af
