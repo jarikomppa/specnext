@@ -127,11 +127,9 @@ startstream:
     ld a, d
     or e
     jp z, streaming_failed2 ; no entries
-    ex de, hl
-    ld de, 20
-    or a
-    sbc hl, de
-    jp c, streaming_failed3 ; too many entries
+    ld a, d
+    or e
+    jp z, streaming_failed3 ; too many entries
 
     ld hl, filemap
     ld (filemapptr), hl
