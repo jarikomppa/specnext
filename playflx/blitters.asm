@@ -91,27 +91,36 @@ screenfill:
     inc a
     nextreg DSTMMU+2, a
     
-    ; calculate max span and output address masked to MMU3 0x6000 region
-    ld hl, 0x4000 + DESTADDR ; TODO: use 24k instead of 16k
+    ; calculate output address masked to MMU5..7 (0xa000..0xffff) region
     ld a, d
-    and 0x3f
+    and 0x1f
     or high DESTADDR ; carry = 0
     ld d, a ; de = output address
-    sbc hl, de ; hl = max span, carry = 0
-    sbc hl, bc
+    ld h, a
+    ld l, e ; hl = output address too
+    inc de ; de++ for memcpy
+    dec bc ; bc = count-1 for memcpy and max-span test
+
+    ; clamp bc = count-1 to fit into dest window
+    ld a, l
+    add a, c
+    ld a, h
+    adc a, b ; carry = 0 if span fits
     jr nc, .okspan
-    add hl, bc
-    ld bc, hl ; fake-ok - clamp bc to maxspan
+    ld a, l ; clamped "(count-1)": bc = 0xffff-hl = -1 + -hl = -1 + (~hl + 1) = ~hl
+    cpl
+    ld c, a
+    ld a, h
+    cpl
+    ld b, a
 .okspan:
-    ; now bc = count, de = output address, stack: screen ofs, original count
-
-    ld hl, de ; fake-ok
-    cpi ; hl++, bc--, PV = (BC!=0) (to detect single byte fill)
-    ex de, hl ; hl = output adr, de = hl+1, bc = count-1
+    ; now hl,de,bc are set for memcpy (but needs bc==0 check), stack: screen ofs, original count
 .a: ld (hl), 0 ; seed memcpy (self-modify value)
-    call pe, memcpy ; if BC!=0 then fill the rest
-    inc bc ; restore bc to fill-count
+    ld a, b
+    or c
+    call nz, memcpy ; if BC!=0 then fill the rest
 
+    inc bc ; restore bc to fill-count
     pop hl
     pop de
     add hl, bc
