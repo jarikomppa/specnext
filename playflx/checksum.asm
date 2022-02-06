@@ -11,7 +11,7 @@ calcchecksum:
     ld a, c
     add a, (hl)
     nextreg DSTMMU, a
-    ld hl, DSTADDR ; mmu3 base address
+    ld hl, DESTADDR ; DSTMMU base address
     ld b, 32
 .outer:
     push bc
@@ -57,7 +57,7 @@ writeout:
     add a, (hl)
     nextreg DSTMMU, a
     pop af
-    ld hl, DSTADDR ; mmu3 base address
+    ld hl, DESTADDR ; DSTMMU base address
     ld bc, 8192
     push af
     call fwrite
