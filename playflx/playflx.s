@@ -407,6 +407,13 @@ fail: ; let's start shutting down
     call printword
     ENDIF    
 
+    RESTORENEXTREG NEXTREG_MMU2, regstore + 1
+;    RESTORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
+;    RESTORENEXTREG NEXTREG_MMU4, regstore + 2 .. done below as last thing
+    RESTORENEXTREG NEXTREG_MMU5, regstore + 3
+    RESTORENEXTREG NEXTREG_MMU6, regstore + 4
+    RESTORENEXTREG NEXTREG_MMU7, regstore + 5
+
     call endstream
 
     ld a, (filehandle)
@@ -430,12 +437,6 @@ freeframebuffers:
     djnz freeframebuffers
 
 
-    RESTORENEXTREG NEXTREG_MMU2, regstore + 1
-;    RESTORENEXTREG NEXTREG_MMU3, regstore + .. handled by dotcopy stuff
-;    RESTORENEXTREG NEXTREG_MMU4, regstore + 2 .. done below as last thing
-    RESTORENEXTREG NEXTREG_MMU5, regstore + 3
-    RESTORENEXTREG NEXTREG_MMU6, regstore + 4
-    RESTORENEXTREG NEXTREG_MMU7, regstore + 5
 
     RESTORENEXTREG NEXTREG_DISPLAY_CONTROL_1, regstore + 6
     RESTORENEXTREG NEXTREG_LAYER2_CONTROL, regstore + 7
