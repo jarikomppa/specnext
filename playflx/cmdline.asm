@@ -1,6 +1,6 @@
  
 parsecmdline:    
-    ld hl, (cmdline)
+    ld hl, cmdline-DOTDIFF;(cmdline)
     ld a, h
     or l
     jr z, printhelp ; no commandline

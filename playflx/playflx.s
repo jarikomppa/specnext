@@ -73,6 +73,7 @@ SRCADDR EQU 0x4000
     inc b         ; nextreg i/o
     in a, (c)
     push af
+    ld (.x1+3-DOTDIFF), a
 
     ; alloc page for our dot command copy
     ld      hl, 0x0001 ; alloc zx memory
@@ -86,6 +87,7 @@ SRCADDR EQU 0x4000
 
     push af
     nextreg DOTMMU, a        ; use the newly allocated page
+    ld (.x2+3-DOTDIFF), a
     
     ld (spstore-DOTDIFF), sp
 
@@ -95,12 +97,21 @@ SRCADDR EQU 0x4000
 	rst     0x8
 	.db     0x95
 
-    ; Copy the dot command over to the newly allocated page
+    ; Copy the dot command over to the newly allocated page    
     ld de, DOTADDR
     ld hl, 0x2000
     ld bc, 0x2000
     ldir
-    
+
+    ; Copy commandline down before we map memory over it
+.x1:nextreg DOTMMU, 1 ; restore orig bank (modified above)
+    ld hl, (cmdline-DOTDIFF)
+    ld bc, 1024 ; 1024 bytes of commandline ought to be enough
+    ld de, cmdline-DOTDIFF
+    ldir
+.x2:nextreg DOTMMU, 1 ; restore dot bank (modified above)
+
+
     ; And jump to it.
     jp realstart
 realstart:
@@ -652,8 +663,6 @@ showpageidx:
     db 0
 spstore:
     db 0,0
-cmdline
-    dw 0
 currentframe
     dw 0
 
@@ -662,6 +671,8 @@ isrcallcount:
     dw 0
     ENDIF
 
+cmdline:
+    dw 0
 
   IFDEF DO_CHECKSUM_CHECK
     INCLUDE checksum.asm
@@ -679,3 +690,4 @@ isrcallcount:
     INCLUDE cmdline.asm
     INCLUDE userinput.asm
     INCLUDE sprite.asm
+    
