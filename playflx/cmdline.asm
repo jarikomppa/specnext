@@ -1,10 +1,10 @@
  
 parsecmdline:    
-    ld hl, cmdline-DOTDIFF;(cmdline)
+    ld hl, (cmdline)
     ld a, h
     or l
     jr z, printhelp ; no commandline
-    ld (command_tail), hl
+    ld hl, cmdline-DOTDIFF;(cmdline)
 paramloop:
     call get_sizedarg
     jr nc, printhelp ; no argument
@@ -455,4 +455,4 @@ opt_precache:
     ret
 
 command_tail:
-    dw 0
+    dw cmdline-DOTDIFF
