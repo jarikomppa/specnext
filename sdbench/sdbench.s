@@ -13,6 +13,31 @@
 .done:
     ENDM
 
+    MACRO STORENEXTREG regno, addr
+        ld bc, 0x243B ; nextreg select
+        ld a, regno
+        out (c), a
+        inc b         ; nextreg i/o
+        in a, (c)
+        ld (addr), a
+    ENDM
+
+    MACRO RESTORENEXTREG regno, addr
+        ld a, (addr)
+        nextreg regno, a
+    ENDM
+
+    MACRO STORENEXTREGMASK regno, addr, mask
+        ld bc, 0x243B ; nextreg select
+        ld a, regno
+        out (c), a
+        inc b         ; nextreg i/o
+        in a, (c)
+        and mask
+        ld (addr), a
+    ENDM
+
+
     MACRO PUSHALL
 		push af
 		push bc
@@ -59,7 +84,10 @@
     jp nz, notnext
     PUSHALL
     ld (spstore), sp
-    PRINT "sdbench v0.1 by Jari Komppa\rhttp://iki.fi/sol\r\rChecking for data file..\r"    
+    STORENEXTREGMASK 7, regstore, 3
+    nextreg 7, 3 ; 28mhz mode.
+
+    PRINT "sdbench v0.2 by Jari Komppa\rhttp://iki.fi/sol\r\rChecking for data file..\r"    
     ld hl, filename
     ld b, 1 ; open, only existing files
 	ld  a,  '*'
@@ -109,23 +137,23 @@ fileok:
 
     call streaming_delays
 
-    PRINT "Streaming 10MB. This should take about a minute:"
+    PRINT "Streaming 100MB. This should take about a minute:"
     ld hl, starttime
     call gettime
 
-    .10 call streaming_test
+    .100 call streaming_test
 
     ld hl, endtime
     call gettime
 
     call printdiff
 
-    PRINT "fread 1MB. This should take about a minute:"
+    PRINT "fread 10MB/512B. This should take about a minute:"
 
     ld hl, starttime
     call gettime
 
-    call freading_test
+    .10 call freading_test
 
     ld hl, endtime
     call gettime
@@ -137,6 +165,7 @@ done:
     ld a, (filehandle)
     rst     0x8
     .db     0x9b ; F_CLOSE
+    RESTORENEXTREG 7, regstore
     ld sp, (spstore)
     POPALL
     or a
@@ -692,4 +721,7 @@ filename:
     db "sdbench.dat",0
 
 filehandle:
+    db 0
+
+regstore:
     db 0
