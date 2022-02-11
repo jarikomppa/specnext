@@ -82,19 +82,35 @@
     nop
     cp 0x80
     jp nz, notnext
+
+    push hl
+    PRINT "sdbench v0.4 by Jari Komppa\rhttp://iki.fi/sol\r"
+    pop hl
+
+    ld a, h
+    or l
+    jp z, halp
+    ld a, (hl)
+    cp "g"
+    jp nz, halp
+    inc hl
+    ld a, (hl)
+    cp "o"
+    jp nz, halp
+
     PUSHALL
     ld (spstore), sp
     STORENEXTREGMASK 7, regstore, 3
     nextreg 7, 3 ; 28mhz mode.
 
-    PRINT "sdbench v0.3 by Jari Komppa\rhttp://iki.fi/sol\r\rChecking for data file..\r"    
+    PRINT "\rChecking for data file..\r"    
     ld hl, filename
     ld b, 1 ; open, only existing files
 	ld  a,  '*'
 	rst     0x8
 	.db     0x9a ; F_OPEN
     jp nc, filefound
-    PRINT "Creating 1MB data file sdbench.dat:"
+    PRINT "\rCreating 1MB data file\rsdbench.dat: "
 
     di
 
@@ -137,18 +153,18 @@ writeloop:
 	ld  a,  '*'
 	rst     0x8
 	.db     0x9a ; F_OPEN
-    jr nc, fileok
+    jp nc, fileok
 
-    PRINT "Huh, can't open the data file I just created.\r"
+    PRINT "\rHuh, can't open the data file I\rjust created.\r"
     jp done
 filefound:
-    PRINT "Using existing file. To test write speed, .rm sdbench.dat\r"    
+    PRINT "\rUsing existing file.\rTo test write speed,\rrun .rm sdbench.dat\r\r"
 
 fileok:
     rst     0x8
     .db     0x9b ; F_CLOSE
 
-    PRINT "SD delay loops (100x):"
+    PRINT "SD delay loops (100x): "
 
     di
 
@@ -156,7 +172,7 @@ fileok:
 
     ei
 
-    PRINT "Streaming 100MB. This should take about a minute:"
+    PRINT "\rStreaming 100MB. This should\rtake about a minute: "
     
     di
 
@@ -172,7 +188,7 @@ fileok:
 
     call printdiff
 
-    PRINT "fread 10MB/512B. This should take about a minute:"
+    PRINT "fread 10MB/512B. This should\rtake about a minute: "
 
     di
 
@@ -430,14 +446,14 @@ startstream:
     ld a, d
     or e
     jp nz, .streamok2 ; too many entries
-    PRINT "Data file is too fragmented. Please run .defrag on it.\r"
+    PRINT "Data file is too fragmented.\rPlease run .defrag on it.\r"
     jp done
 .streamok2:
     ld bc, filemap
     or a
     sbc hl, bc
     jp nz, .streamok3 ; no entries
-    PRINT "File map appears to have no entries.\r"
+    PRINT "File map appears to have\rno entries.\r"
     jp done
 .streamok3:
     ld hl, filemap
@@ -719,11 +735,42 @@ notnext:
     ld hl, notnextmsg
     jp printloop
 
+halp:
+    ld hl, helptext
+    jp printloop
+
 rtcfailmsg:
     db "RTC read failed.\r",0
 
+helptext:
+    db "\r"
+    db "This is a benchmark for\r"
+    db "SD card speed. Most cards\r"
+    db "are 'fast enough' on the\r"
+    db "next, so results will not\r"
+    db "vary a lot.\r"
+    db "\r"
+    db "The test will create a 1MB\r"
+    db "file sdbench.dat which will\r"
+    db "not be deleted by this tool.\r"
+    db "Feel free to remove it.\r"
+    db "\r"
+    db "The tool will also report\r"
+    db "'sd delay loops', which does\r"
+    db "seem to vary a bit between\r"
+    db "cards. The smaller the better.\r"
+    db "\r"
+    db "Typical results are:\r"
+    db "sd delay loops (100x): 600\r"
+    db "streaming 100MB: 1:14\r"
+    db "fread 10MB/512B: 0:57\r"
+    db "\r"
+    db "To run the test:\r"
+    db ".sdbench go\r"
+    db "\r",0
+
 notnextmsg:
-    db "This does not appear to be ZX Spectrum Next.",0
+    db "This does not appear to be\ra ZX Spectrum Next.",0
 
 filefailmsg:
     db "Unable to create data file.", 0
