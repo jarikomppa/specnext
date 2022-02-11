@@ -87,14 +87,20 @@
     STORENEXTREGMASK 7, regstore, 3
     nextreg 7, 3 ; 28mhz mode.
 
-    PRINT "sdbench v0.2 by Jari Komppa\rhttp://iki.fi/sol\r\rChecking for data file..\r"    
+    PRINT "sdbench v0.3 by Jari Komppa\rhttp://iki.fi/sol\r\rChecking for data file..\r"    
     ld hl, filename
     ld b, 1 ; open, only existing files
 	ld  a,  '*'
 	rst     0x8
 	.db     0x9a ; F_OPEN
-    jp nc, fileok
-    PRINT "Creating 1MB data file sdbench.dat..\r"
+    jp nc, filefound
+    PRINT "Creating 1MB data file sdbench.dat:"
+
+    di
+
+    ld hl, starttime
+    call gettime
+
     ld hl, filename
     ld b, 2 + 8 ; open for writing, create if needed
 	ld  a,  '*'
@@ -119,6 +125,13 @@ writeloop:
     rst     0x8
     .db     0x9b ; F_CLOSE
 
+    ld hl, endtime
+    call gettime
+
+    ei
+
+    call printdiff
+
     ld hl, filename
     ld b, 1 ; open, only existing files
 	ld  a,  '*'
@@ -128,6 +141,8 @@ writeloop:
 
     PRINT "Huh, can't open the data file I just created.\r"
     jp done
+filefound:
+    PRINT "Using existing file. To test write speed, .rm sdbench.dat\r"    
 
 fileok:
     rst     0x8
@@ -135,9 +150,16 @@ fileok:
 
     PRINT "SD delay loops (100x):"
 
+    di
+
     call streaming_delays
 
+    ei
+
     PRINT "Streaming 100MB. This should take about a minute:"
+    
+    di
+
     ld hl, starttime
     call gettime
 
@@ -146,9 +168,13 @@ fileok:
     ld hl, endtime
     call gettime
 
+    ei
+
     call printdiff
 
     PRINT "fread 10MB/512B. This should take about a minute:"
+
+    di
 
     ld hl, starttime
     call gettime
@@ -157,6 +183,8 @@ fileok:
 
     ld hl, endtime
     call gettime
+
+    ei
 
     call printdiff
 
@@ -679,6 +707,7 @@ nortc:
     jp printloop
 
 printloop:
+    ei
     ld a, (hl)
     and a, a
     ret z
