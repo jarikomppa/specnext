@@ -159,7 +159,11 @@ realstart:
     call nextfileblock
 
     call readbyte
-    cp 'N'
+    cp 'F'
+    jp nz, fail_type
+
+    call readbyte
+    cp 'L'
     jp nz, fail_type
 
     call readbyte
@@ -167,11 +171,7 @@ realstart:
     jp nz, fail_type
 
     call readbyte
-    cp 'F'
-    jp nz, fail_type
-
-    call readbyte
-    cp 'L'
+    cp '!'
     jp nz, fail_type
 
 
@@ -268,6 +268,12 @@ allocframebuffers:
     ld (frames), hl
     call readword
     ld (speed), hl
+    call readword
+    ld (config), hl ; TODO: use config (graphics mode)
+    call readword
+    ld (drawoffset), hl ; TODO: use drawoffset
+    call readword
+    ld (loopoffset), hl ; TODO: use loopoffset
 
 ; next up: 512 bytes of palette
 
@@ -301,58 +307,47 @@ setpalette:
 startanim:
     ei
     ld bc, (frames)
+    ld (framesleft), bc
 animloop:
-    push bc
-
-
-    ld a, (framebuffers)
-    ld e, a
-    ld a, (renderpageidx)
-    inc a              ; renderpageidx++
-    cp e
-    jr nz, .notrollover ; if renderpageidx == framebuffers
-    ld a, 0
-.notrollover:
-    ld (renderpageidx), a
-    ld e, a
-    ld hl, framebufferpage
-    ld c, a
-    ld b, 0
-    add hl, bc
-    ld a, (hl)
-    ld (rendertarget), a
 
     ;call printbyte
     IFNDEF PERF_GRIND
+    ld a, (renderpageidx)
+    ld e, a
 .wait:
     ld a, (showpageidx)
     cp e       ; if showpageidx == renderpageidx
     jr nz, .nowait ; wait for the isr to progress
-    ei
+    ei         ; precache enables interrupts here
     jr .wait
 .nowait
     ENDIF
 
     call readbyte
     ;call printbyte
+    cp 0
+    jp z, NEXTFRAME
+    cp 3
+    jp z, SAMEFRAME
+    cp 6
+    jp z, BLACKFRAME
+    cp 9
+    jp z, ONECOLOR
+    cp 12
+    jp z, LZ1B
+    cp 15
+    jp z, LZ4
     cp 18
     jp z, LZ5
-    cp 17
-    jp z, LZ4
-    cp 13
-    jp z, LZ1B
-    cp 19
-    jp z, LZ6
     cp 21
+    jp z, LZ6
+    cp 24
     jp z, LZ3C
-    cp 1
-    jp z, SAMEFRAME
-    cp 2
-    jp z, BLACKFRAME
-    cp 7
-    jp z, ONECOLOR
+    CP 27
+    jp z, SUBFRAME
 
     jp UNKNOWN
+
 blockdone:
     call readword     ; checksums -> hl
 
@@ -375,17 +370,8 @@ blockdone:
 .checksum_ok:
   ENDIF
 
-    ; advance the readypage so it can be shown
-    ld a, (renderpageidx)
-    ld (readypageidx), a ; mark current renderpage as ready
-    ld a, (rendertarget)
-    ld (previousframe), a ; current render target is now previous
-        
-    pop bc ; number of frames
-    dec bc
-    ld a, b
-    or c
-    jp nz, animloop
+nextframedone:
+    jp animloop
 
 ; ------------------------------------------------------------------------
 
@@ -516,7 +502,55 @@ loopanim:
     call skipbytes
     jp startanim
 
+SUBFRAME:
+    ; Move window 16k forward for last 64k of 80k frame
+    ld a, (previousframe)
+    add a, 2
+    ld (previousframe), a
+    ; Move render target to second 40k of 80k frame
+    ld a, (rendertarget)
+    add a, 5
+    ld (rendertarget), a
+    jp animloop
 
+NEXTFRAME:
+    ; advance the readypage so it can be shown
+    ld a, (renderpageidx)
+    ld (readypageidx), a ; mark current renderpage as ready, isr can progress
+    ; set current page as previous for lz. Can't just use renderetarget because
+    ; subframe may have messed it up (but might have not)
+    ld c, a
+    ld b, 0
+    ld hl, framebufferpage
+    add hl, bc
+    ld a, (hl)
+    ld (previousframe), a
+
+    ; increase renderpageidx and roll it over if all framebuffers were used
+    ld a, (framebuffers)
+    ld e, a
+    ld a, c;(renderpageidx)
+    inc a              ; renderpageidx++
+    cp e
+    jr nz, .notrollover ; if renderpageidx == framebuffers
+    ld a, 0
+.notrollover:
+    ld (renderpageidx), a
+    ld hl, framebufferpage
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, (hl)
+    ld (rendertarget), a
+
+    ld bc, (framesleft)
+    dec bc
+    ld (framesleft), bc
+
+    ld a, b
+    or c
+    jp nz, animloop
+    jp loopjumppoint
 
 
 fail_open_msg:
@@ -656,15 +690,23 @@ previousframe: equ screencopyfromprevframe.pf+1 ; stored in code
 rendertarget:
     db 0
 renderpageidx:
-    db 0
+    db 1
 readypageidx:
     db 0
 showpageidx:
     db 0
 spstore:
     db 0,0
-currentframe
+currentframe:
     dw 0
+framesleft:
+    dw 0
+loopoffset:
+    dw 0
+drawoffset:
+    dw 0
+config:
+    dw 0    
 
     IFDEF PERF_GRIND
 isrcallcount:

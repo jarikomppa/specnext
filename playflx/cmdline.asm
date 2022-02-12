@@ -19,7 +19,7 @@ printhelp:
     jp fail
 
 helptext:
-    db "PLAYFLX v0.6 by Jari Komppa\r"
+    db "PLAYFLX v0.7B by Jari Komppa\r"
     db "http://iki.fi/sol\r"
     db "Play .flx animations\r\r"
     db "SYNOPSIS:\r"
