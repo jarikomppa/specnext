@@ -273,7 +273,7 @@ allocframebuffers:
     call readword
     ld (drawoffset), hl ; TODO: use drawoffset
     call readword
-    ld (loopoffset), hl ; TODO: use loopoffset
+    ld (loopoffset), hl
 
 ; next up: 512 bytes of palette
 
@@ -370,7 +370,6 @@ blockdone:
 .checksum_ok:
   ENDIF
 
-nextframedone:
     jp animloop
 
 ; ------------------------------------------------------------------------
@@ -490,6 +489,7 @@ loopanim:
 ; perform loop
 ; note: do this *before* waitforfinish for better results
 ; (audio, if any, may require special handling for loops though)
+    
     call endstream
     ld bc, 0
     ld de, 0
@@ -498,9 +498,18 @@ loopanim:
     call fseek ; seek to beginning
     call restartstream
     call nextfileblock
-    ld bc, 4+2+2+512
+    ld bc, (loopoffset)
     call skipbytes
-    jp startanim
+
+    ld bc, (frames)
+    ld a, (config+1)
+    and 0x80
+    jr z, .noloopframe
+    dec bc
+.noloopframe:    
+    ld (framesleft), bc
+
+    jp animloop
 
 SUBFRAME:
     ; Move window 16k forward for last 64k of 80k frame
@@ -517,6 +526,7 @@ NEXTFRAME:
     ; advance the readypage so it can be shown
     ld a, (renderpageidx)
     ld (readypageidx), a ; mark current renderpage as ready, isr can progress
+
     ; set current page as previous for lz. Can't just use renderetarget because
     ; subframe may have messed it up (but might have not)
     ld c, a
@@ -671,9 +681,9 @@ filehandle:
 fileindex:
     dw FILEBUF
 frames:
-    db 0,0
+    dw 0
 speed:
-    db 0,0
+    dw 0
 framewaits:
     db 0
 regstore:
@@ -696,7 +706,7 @@ readypageidx:
 showpageidx:
     db 0
 spstore:
-    db 0,0
+    dw 0
 currentframe:
     dw 0
 framesleft:
