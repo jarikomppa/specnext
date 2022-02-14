@@ -9,7 +9,7 @@ LZ4:
 ; LZ copy from *current frame*
     ld a, (previousframe)
     push af
-    ld a, (rendertarget)
+    ld a, (currentframesrc)
     ld (previousframe), a
 .tick:
     push hl
@@ -458,7 +458,7 @@ LZ6:
 ; LZ copy from *current frame*
     ld a, (previousframe)
     push af
-    ld a, (rendertarget)
+    ld a, (currentframesrc)
     ld (previousframe), a
 
     call screencopyfromprevframe

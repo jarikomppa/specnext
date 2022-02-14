@@ -177,9 +177,45 @@ realstart:
 
 ; header tag read and apparently fine at this point.
 
+; read rest of header
+
+    call readword
+    ld (frames), hl
+    call readword
+    ld (speed), hl
+    call readword
+    ld (config), hl
+    call readword
+    ld (drawoffset), hl ; TODO: use drawoffset
+    call readword
+    ld (loopoffset), hl
+
+    ld a, (config)
+    and 3 ; graphics mode
+    cp 3
+    jr nz, .notlores
+    ; LoRes: 2 pages per framebuffer
+    ld a, 32
+    ld (allocframebuffers.n0+1), a
+    ld a, 2
+    ld (allocframebuffers.n1+1), a
+    ld (allocframebuffers.n2+1), a
+    jp .alloc_config_done    
+.notlores:
+    cp 0
+    jr z, .alloc_config_done ; default mode
+    ; 320x256 or 640x256: 10 pages per framebuffer
+    ld a, 19 ; todo: .10 core: 22
+    ld (allocframebuffers.n0+1), a
+    ld a, 10
+    ld (allocframebuffers.n1+1), a
+    ld (allocframebuffers.n2+1), a
+.alloc_config_done:
+    ; default is 256x192, 6 pages per framebuffer
+
     ; allocate framebuffers
 allocframebuffers:
-    ld b, 37-5 ; total framebuffers to try
+.n0:ld b, 37-5 ; total framebuffers to try
     ; -5 because specnext 3.01.05 core has a bug and doesn't display the last few. TODO: upgrade to .10
     ; (curiously, cspect has a very similar issue)
     ld e, 0 ; page; 6 pages per framebuffer (222 pages to reserve)
@@ -190,7 +226,7 @@ allocframebuffers:
     ld a, e
     ld (SCRATCH+100), a ; put framebuffer's first page to scratch
     ld c, 0 ; successful reserves
-    ld b, 6 ; pages per framebuffer
+.n1:ld b, 6 ; pages per framebuffer
 .nextframebufferpage:
     push bc
     push de
@@ -207,7 +243,7 @@ allocframebuffers:
     inc e         ; next page
     djnz .nextframebufferpage
     ld a, c
-    cp 6
+.n2:cp 6
     jr nz, .noframebuffer ; failed to allocate at least 1 of the 6 pages, no twinkie
     ld a, (SCRATCH+100) ; put the first page of the framebuffer to table
     ld (ix), a
@@ -235,6 +271,7 @@ allocframebuffers:
     ld a, (hl)
     ld (rendertarget), a
     ld (previousframe), a
+    ld (currentframesrc), a
 
 
     ld de, 0
@@ -246,34 +283,8 @@ allocframebuffers:
     call setupisr
 
   IFNDEF NO_GRAPHICS_SETUP
-    ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_DISPLAY_CONTROL_1
-    out (c), a
-    inc b         ; nextreg i/o
-    in a, (c)
-    or 0x80       ; enable layer 2
-    out (c), a
-
-    nextreg NEXTREG_LAYER2_CONTROL, 0 ; 256x192 resolution, palette offset 0
-    nextreg NEXTREG_GENERAL_TRANSPARENCY, 0 ; transparent color = 0
-    nextreg NEXTREG_TRANSPARENCY_COLOR_FALLBACK, 0 ; fallback color = 0
-    nextreg NEXTREG_ENHANCED_ULA_CONTROL, 0x11 ; enable ulanext & layer2 palette 1
-    nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
-    nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
+    call graphics_setup
   ENDIF
-
-; read rest of header
-
-    call readword
-    ld (frames), hl
-    call readword
-    ld (speed), hl
-    call readword
-    ld (config), hl ; TODO: use config (graphics mode)
-    call readword
-    ld (drawoffset), hl ; TODO: use drawoffset
-    call readword
-    ld (loopoffset), hl
 
 ; next up: 512 bytes of palette
 
@@ -516,6 +527,9 @@ SUBFRAME:
     ld a, (previousframe)
     add a, 2
     ld (previousframe), a
+    ld a, (currentframesrc)
+    add a, 2
+    ld (currentframesrc), a
     ; Move render target to second 40k of 80k frame
     ld a, (rendertarget)
     add a, 5
@@ -552,6 +566,7 @@ NEXTFRAME:
     add hl, bc
     ld a, (hl)
     ld (rendertarget), a
+    ld (currentframesrc), a
 
     ld bc, (framesleft)
     dec bc
@@ -675,6 +690,39 @@ showdebug:
     ;call spritepos
 ;    ret
 
+graphics_setup:
+    ld a, (config)
+    and 3
+    cp 3
+    jr z, .lores
+    cp 0
+    jr z, .defaultres
+    nextreg NEXTREG_CLIP_LAYER2, 0
+    nextreg NEXTREG_CLIP_LAYER2, 255
+    nextreg NEXTREG_CLIP_LAYER2, 0
+    nextreg NEXTREG_CLIP_LAYER2, 255
+.defaultres:    
+    swapnib
+    nextreg NEXTREG_LAYER2_CONTROL, a ; 256x192 resolution, palette offset 0
+
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_DISPLAY_CONTROL_1
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    or 0x80       ; enable layer 2
+    out (c), a
+
+    nextreg NEXTREG_GENERAL_TRANSPARENCY, 0 ; transparent color = 0
+    nextreg NEXTREG_TRANSPARENCY_COLOR_FALLBACK, 0 ; fallback color = 0
+    nextreg NEXTREG_ENHANCED_ULA_CONTROL, 0x11 ; enable ulanext & layer2 palette 1
+    nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
+    nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA    
+    ret
+.lores:
+    ; todo lores
+    ret    
+
 
 filehandle:
     db 0
@@ -697,6 +745,8 @@ framebufferpage:
 allocpages:
     BLOCK 256, 0
 previousframe: equ screencopyfromprevframe.pf+1 ; stored in code
+currentframesrc: ; copy source
+    db 0
 rendertarget:
     db 0
 renderpageidx:
