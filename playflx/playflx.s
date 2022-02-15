@@ -195,11 +195,18 @@ realstart:
     cp 3
     jr nz, .notlores
     ; LoRes: 2 pages per framebuffer
-    ld a, 32
+    ld a, 32 ; could be 100..
     ld (allocframebuffers.n0+1), a
     ld a, 2
     ld (allocframebuffers.n1+1), a
     ld (allocframebuffers.n2+1), a
+    ; patch page flip from nextreg to call
+    ld a, 0xcd ; CALL XX
+    ld (isr.flip), a
+    ld a, low lores_flip
+    ld (isr.flip+1), a
+    ld a, high lores_flip
+    ld (isr.flip+2), a
     jp .alloc_config_done    
 .notlores:
     cp 0
@@ -649,7 +656,7 @@ isr:
     ;call printbyte
     srl a ; 16k pages
     ;call printbyte
-    nextreg NEXTREG_LAYER2_RAMPAGE, a
+.flip:nextreg NEXTREG_LAYER2_RAMPAGE, a
 
     ; Current frame shown (for game mode)
     ld hl, (currentframe)
@@ -720,9 +727,46 @@ graphics_setup:
     nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA    
     ret
 .lores:
-    ; todo lores
+    nextreg NEXTREG_SPRITE_AND_LAYERS, 0x80 ; enable LoRes
+    nextreg NEXTREG_LORES_CONTROL, 0 ; 256c LoRes
+    nextreg NEXTREG_GENERAL_TRANSPARENCY, 0 ; transparent color = 0
+    nextreg NEXTREG_TRANSPARENCY_COLOR_FALLBACK, 0 ; fallback color = 0
+    nextreg NEXTREG_ENHANCED_ULA_CONTROL, 1;0x43 ; enable ulanext & ula palette 2
+    nextreg NEXTREG_ENHANCED_ULA_INK_COLOR_MASK, 0xff ; ulanext color mask
+    ;nextreg NEXTREG_ULA_CONTROL, 0x80 ; disable ULA
     ret    
 
+ ; a: framebuffer page in 16k pages
+lores_flip:
+    sla a
+    push af
+    push af
+    ; need to preserve the current value of nextregs because this is
+    ; called from isr..
+    STORENEXTREG SRCMMU, SCRATCH+3
+    STORENEXTREG DSTMMU, SCRATCH+4
+    pop af
+    nextreg SRCMMU, a
+    nextreg DSTMMU, 10
+    ld de, DESTADDR
+    ld hl, SRCADDR
+    ld bc, 6*1024
+    ldir; can't dma because that goes boom. call memcpy.dma_memcpy
+    nextreg DSTMMU, 11
+    ld de, DESTADDR
+    ld hl, SRCADDR + 6 * 1024
+    ld bc, 2*1024
+    ldir; call memcpy.dma_memcpy
+    pop af
+    inc a
+    nextreg SRCMMU, a
+    ld de, DESTADDR + 2 * 1024
+    ld hl, SRCADDR
+    ld bc, 4*1024
+    ldir; call memcpy.dma_memcpy
+    RESTORENEXTREG SRCMMU, SCRATCH+3
+    RESTORENEXTREG DSTMMU, SCRATCH+4
+    ret
 
 filehandle:
     db 0
