@@ -49,6 +49,7 @@ extern char *cmdline;
 extern unsigned char scr_x;
 extern unsigned char scr_y;
 extern char dbg;
+extern unsigned short corever;
 
 // See calc_prescalar.c for the prescalar calculation code
 static const unsigned short prescalar_values[] = {
@@ -69,7 +70,7 @@ static const unsigned short prescalar_values[] = {
    14,    14,    14,    15,    15,    16,    16,    13  // (14) 2000000    
 };
 
-// Uart setup based on code by D. ‘Xalior’ Rimron-Soutter
+// Uart setup based on code by D. â€˜Xaliorâ€™ Rimron-Soutter
 void setupuart(char mode)
 {
    unsigned short prescalar = prescalar_values[mode * 8 + (readnextreg(0x11) & 0x07)];
@@ -211,7 +212,7 @@ void send(const char *b, unsigned char bytes)
             timeout--;
             t = UART_TX;
         }
-        while (timeout && t & 2);
+        while ((t & 2) && timeout); // bit 1 = 1 if the Tx buffer is full
         
         UART_TX = *b;
 
@@ -220,6 +221,20 @@ void send(const char *b, unsigned char bytes)
         bytes--;
     }
     gPort254 = 0;
+
+    // On later core versions, UART Tx buffer size is 64 not 1, so bytes are accepted faster but still
+    // sent at the same rate. To preserve previous timings, wait for buffer to empty before continuing.
+    // On core versions where flag bit 4 does not exist yet, skip this Tx buffer flush.
+    if (corever >= 0x310a) // 3.01.10
+    {
+        timeout = TIMEOUT;
+        do
+        {
+            timeout--;
+            t = UART_TX;       
+        }
+        while (!(t & 16) && timeout); // bit 4 = 1 if the Tx buffer is empty
+    }
 }
 
 extern unsigned char strinstr(char *a, char *b, unsigned short len, char blen);
@@ -471,7 +486,7 @@ void main()
         // Probably asking for help.
         conprint(
            //12345678901234567890123456789012
-            "SYNC v1.0 by Jari Komppa\r"
+            "SYNC v1.1 by Jari Komppa\r"
             "Wifi transfer files from PC\r"
             "\r"
             "SYNOPSIS:\r"
@@ -521,9 +536,12 @@ void main()
           
     SETX(0);
     
-    print("NextSync 1.0 by Jari Komppa");
+    print("NextSync 1.1 by Jari Komppa");
     print("http://iki.fi/sol");
     SETY(scr_y+1);
+
+    // read Next core version - e.g. 3.01.10 will be 0x310a
+    corever = readnextreg(0x01) * 256 + readnextreg(0x0e);
 
     // select esp uart, set 17-bit prescalar top bits to zero
     UART_CTL = 16; 

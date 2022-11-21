@@ -5,6 +5,7 @@
 		.globl _scr_y
 		.globl _dbg
 		.globl _osiy
+		.globl _corever
 
 		.area _HEADER(ABS)
 _crt0_entry:	
@@ -103,6 +104,7 @@ _mmu4: .db 0
 _scr_x: .db 0
 _scr_y: .db 0
 _dbg: .db 0
+_corever: .word 0
 
 _endof_crt0:
 		;;	(linker documentation:) where specific ordering is desired - 
