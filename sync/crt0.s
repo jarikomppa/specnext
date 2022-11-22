@@ -93,6 +93,7 @@ allocfail:
 		pop bc
 		pop af
 
+		or a 							; clear CF to indicate success (0 OK) to BASIC
 		
 		ei
 		ret	
