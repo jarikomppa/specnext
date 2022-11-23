@@ -486,7 +486,7 @@ void main()
         // Probably asking for help.
         conprint(
            //12345678901234567890123456789012
-            "SYNC v1.1 by Jari Komppa\r"
+            "SYNC v1.2 by Jari Komppa\r"
             "Wifi transfer files from PC\r"
             "\r"
             "SYNOPSIS:\r"
@@ -508,7 +508,8 @@ void main()
         conprint("\r-> ");
         conprint((char*)conffile);
         conprint("\r");
-        filehandle = createfilewithpath((char*)conffile);
+        memcpy((char*)inbuf, (char*)conffile, 27);     // Constants are located below $4000, so copy
+        filehandle = createfilewithpath((char*)inbuf); // filename into temp buffer to keep IDE_PATH happy.
         if (filehandle == 0)
         {
             conprint("Failed to open file\r");
@@ -536,7 +537,7 @@ void main()
           
     SETX(0);
     
-    print("NextSync 1.1 by Jari Komppa");
+    print("NextSync 1.2 by Jari Komppa");
     print("http://iki.fi/sol");
     SETY(scr_y+1);
 
