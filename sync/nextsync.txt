@@ -1,4 +1,4 @@
-NextSync 1.1
+NextSync 1.2
 by Jari Komppa 2020
 http://iki.fi/sol
 
