@@ -1,10 +1,10 @@
 		.module crt0
 		.globl _heap
 		.globl _cmdline
-		.globl _scr_x
-		.globl _scr_y
 		.globl _dbg
 		.globl _osiy
+		.globl _corever
+		.globl _scr_ct
 
 		.area _HEADER(ABS)
 _crt0_entry:	
@@ -92,6 +92,7 @@ allocfail:
 		pop bc
 		pop af
 
+		or a 							; clear CF to indicate success (0 OK) to BASIC
 		
 		ei
 		ret	
@@ -100,9 +101,9 @@ _cmdline:   .word 0
 _pagehandle: .word 0
 _osiy: .word 0
 _mmu4: .db 0
-_scr_x: .db 0
-_scr_y: .db 0
 _dbg: .db 0
+_corever: .word 0
+_scr_ct: .db 0
 
 _endof_crt0:
 		;;	(linker documentation:) where specific ordering is desired - 

@@ -1,4 +1,4 @@
-NextSync 1.0
+NextSync 1.1
 by Jari Komppa 2020
 http://iki.fi/sol
 
@@ -383,3 +383,8 @@ Sometimes the esp may just have a brain fart and send kilobytes
 of noise to the z80. This is pretty hard to deal with, so sometimes
 transfers just break, or hang. Often NextSync survives these but
 may take a while.
+
+Next cores 3.01.10 and above have a Tx buffer size of 64 bytes, not
+1 byte. So bytes are accepted faster but still sent at the same rate.
+To preserve previous timings, on 3.01.10+ NextSync waits for all the
+bytes to be sent before continuing.

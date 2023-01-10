@@ -51,7 +51,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 *.lst
-*.asm
 *.bak
 *.rel
 *.noi
@@ -61,3 +60,12 @@ dkms.conf
 *.lk
 zakplay/out/
 *.dat
+emu/
+playflx/ref/
+playflx/sync/
+playfli/sync/
+*.raw
+dt/sync/nextsync.py
+dt/sync/
+incoming/
+release/

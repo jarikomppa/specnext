@@ -5,50 +5,33 @@
  * (practically public domain) 
  */
 
-extern const unsigned short yofs[];
+/*
+One of the reasons why this code is confusing is that there's various
+layers in play.
 
-extern const unsigned char fona_png[];
+- Dot command harness. For a while we can exit cleanly without much of a hassle.
+  Some things are done at this level, like printing out help.
+- Runtime proper. Have altered system state, needs a lot of cleanup. This starts from
+  printversion() onwards.
+- Talking to UART. Things may go wrong here. Different UART speeds need different
+  settings, and these are not exact, so some drifting may happen if we're unlucky 
+  (or have calculated things wrong). 
+- Talking to ESP through UART. A lot of things can go wrong here. There are different
+  ESP firmwares that may act slightly differently. Network environment may change the
+  behavior too.
+- Talking to nextsync server through ESP through UART. The nextsync server is, luckily,
+  something we control again so it's not a complete unknown. Also, network stacks on
+  PCs are more stable than what we have on the speccy side so we can largely ignore it.  
+
+*/
+
+#include "nextsync.h"
 
 #define TIMEOUT 20000
 #define TIMEOUT_FLUSHUART 10000
 
-#define SETX(x) scr_x = (x)
-#define SETY(y) scr_y = (y)
-
 //#define SYNCSLOW
 //#define SYNCFAST
-
-// xxxsmbbb
-// where b = border color, m is mic, s is speaker
-__sfr __at 0xfe gPort254;
-
-extern unsigned char fopen(unsigned char *fn, unsigned char mode);
-extern void fclose(unsigned char handle);
-extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
-extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
-extern void makepath(char *pathspec); // must be 0xff terminated!
-extern void conprint(char *txt) __z88dk_fastcall;
-
-extern unsigned char allocpage();
-extern void freepage(unsigned char page);
-
-__sfr __banked __at 0x243B PORT_NEXTREG_SELECT;
-__sfr __banked __at 0x253B PORT_NEXTREG_IO;
-__sfr __banked __at 0x133b UART_TX;
-__sfr __banked __at 0x143b UART_RX;
-__sfr __banked __at 0x153b UART_CTL;
-
-extern unsigned short receive(char *b);
-extern char checksum(char *dp, unsigned short len);
-
-extern void memcpy(char *dest, const char *source, unsigned short count);
-extern unsigned short mulby10(unsigned short input) __z88dk_fastcall;
-
-extern unsigned short framecounter;
-extern char *cmdline;
-extern unsigned char scr_x;
-extern unsigned char scr_y;
-extern char dbg;
 
 // See calc_prescalar.c for the prescalar calculation code
 static const unsigned short prescalar_values[] = {
@@ -69,15 +52,7 @@ static const unsigned short prescalar_values[] = {
    14,    14,    14,    15,    15,    16,    16,    13  // (14) 2000000    
 };
 
-#define writenextreg(REG, VAL) { PORT_NEXTREG_SELECT = (REG); PORT_NEXTREG_IO = (VAL); }
-
-unsigned char readnextreg(char reg)
-{
-    PORT_NEXTREG_SELECT = reg;
-    return PORT_NEXTREG_IO;
-}
-
-// Uart setup based on code by D. ‘Xalior’ Rimron-Soutter
+// Uart setup based on code by D. â€˜Xaliorâ€™ Rimron-Soutter
 void setupuart(char mode)
 {
    unsigned short prescalar = prescalar_values[mode * 8 + (readnextreg(0x11) & 0x07)];
@@ -86,86 +61,6 @@ void setupuart(char mode)
    UART_RX = 0x80 | (unsigned char)(prescalar >> 7);
    UART_RX = (unsigned char)(prescalar) & 0x7f;
 }
-
-unsigned char parse_cmdline(char *f)
-{
-    unsigned char i;   
-    
-    if (!cmdline)
-    {
-        f[0] = 0;
-        return 0;
-    }
-
-    i = 0;
-    while (i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
-    {
-        f[i] = cmdline[i];
-        i++;        
-    }
-
-    f[i] = 0;
-    return i;
-}
-
-char memcmp(char *a, char *b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        char v = a[i] - b[i];
-        if (v != 0) return v;            
-        i++;
-    }
-    return 0;
-}
-
-void memset(char *a, char b, unsigned short l)
-{
-    unsigned short i = 0;
-    while (i < l)
-    {
-        a[i] = b;
-        i++;
-    }
-}
-
-extern void drawchar(unsigned char c);
-
-extern void scrollup();
-
-extern void checkscroll();
-
-void print(char * t)
-{
-    while (*t)
-    {
-        if (*t == '\n')
-        {
-            scr_x = 0;
-            scr_y++;
-        }
-        else
-        {
-            drawchar(*t);
-            scr_x++;
-            if (scr_x == 32)
-            {
-                scr_x = 0;
-                scr_y++;
-            }
-        }
-        checkscroll();
-        t++;
-    }
-    scr_y++;
-    scr_x = 0;
-    checkscroll();
-}
-
-extern unsigned char uitoa(unsigned long v, char *b);
-
-void printnum(unsigned long v);
 
 // Just flush as much as is in the queue right now.
 void flush_uart()
@@ -219,7 +114,7 @@ void send(const char *b, unsigned char bytes)
             timeout--;
             t = UART_TX;
         }
-        while (timeout && t & 2);
+        while ((t & 2) && timeout); // bit 1 = 1 if the Tx buffer is full
         
         UART_TX = *b;
 
@@ -228,9 +123,21 @@ void send(const char *b, unsigned char bytes)
         bytes--;
     }
     gPort254 = 0;
-}
 
-extern unsigned char strinstr(char *a, char *b, unsigned short len, char blen);
+    // On later core versions, UART Tx buffer size is 64 not 1, so bytes are accepted faster but still
+    // sent at the same rate. To preserve previous timings, wait for buffer to empty before continuing.
+    // On core versions where flag bit 4 does not exist yet, skip this Tx buffer flush.
+    if (corever >= 0x310a) // 3.01.10
+    {
+        timeout = TIMEOUT;
+        do
+        {
+            timeout--;
+            t = UART_TX;       
+        }
+        while (!(t & 16) && timeout); // bit 4 = 1 if the Tx buffer is empty
+    }
+}
 
 // Anatomy of a cipxfer:
 // [s]"AT+CIPSENDEX=5\r\n"
@@ -251,7 +158,7 @@ unsigned short bufinput(char *buf)
     if (receive_slow() != ',') return 0; // should be ,
     datalen = receive_slow() - '0'; // first digit
     r = receive_slow();
-    while (r != ':')
+    while (r != ':') // TODO: possible inf loop
     {
         datalen = mulby10(datalen);
         datalen += r - '0';
@@ -260,6 +167,7 @@ unsigned short bufinput(char *buf)
     }
 
     if (datalen > 2048 || datalen == 0) return 0;
+	
     do
     {
         ofs += receive(buf + ofs);
@@ -353,35 +261,12 @@ char gofast(char *inbuf)
     flush_uart_hard();
     if (atcmd("\r\n", "ERROR", 5, inbuf))
     {
-        print("Can't talk to esp fast");
+        println("Can't talk to esp fast");
         return 1;
     }     
     return 0;
 }
 #endif
-
-unsigned char createfilewithpath(char * fn)
-{
-    unsigned char filehandle;
-    char * slash;
-    filehandle = fopen(fn, 2 + 0x0c);  // write + create new file, delete existing
-    if (filehandle) return filehandle;
-    // Okay, couldn't create the file, so let's try to make the path.
-    // We need to call makepath for each directory in the tree to build
-    // complex paths.
-    slash = fn;    
-    while (*slash) 
-    {
-        slash++;
-        if (*slash == '/')
-        {
-            *slash = 0xff; // makepath wants strings to end with 0xff
-            makepath(fn);    
-            *slash = '/';
-        }
-    }
-    return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
-}
 
 char transfer(char *fn, unsigned char *inbuf)
 {
@@ -396,7 +281,7 @@ restart:
     filehandle = createfilewithpath(fn);
     if (filehandle == 0)
     {
-        print("Unable to open file");
+        println("Unable to open file");
         return 0;
     }
 
@@ -426,9 +311,6 @@ retry:
             len -= 3;
             received += len;
             fwrite(filehandle, dp, len);
-            SETX(5);
-            printnum(received);
-            SETY(scr_y -1);                
             packetno++;
             failcount = 0;
         }
@@ -468,6 +350,8 @@ void main()
     char fastuart = 0;
     char filehandle;
     char retrycount;
+	
+	scr_ct = *((char *)23692); // grab old value of screen counter
 
     len = parse_cmdline(fn);
 
@@ -477,20 +361,7 @@ void main()
     if ((len && fn[0] == '-') || (!len && filehandle == 0))
     {
         // Probably asking for help.
-        conprint(
-           //12345678901234567890123456789012
-            "SYNC v1.0 by Jari Komppa\r"
-            "Wifi transfer files from PC\r"
-            "\r"
-            "SYNOPSIS:\r"
-            ".SYNC [servername/ip addr]\r"
-            "\r"
-            "Either run without parameters\r"
-            "to sync files, or give server\r"
-            "address or name to save config.\r"
-            "\r"
-            "Please read nextsync.txt for\r"
-            "further instructions.\r\r");
+		printhelp();
         goto terminate;
     }
         
@@ -501,7 +372,8 @@ void main()
         conprint("\r-> ");
         conprint((char*)conffile);
         conprint("\r");
-        filehandle = createfilewithpath((char*)conffile);
+        memcpy((char*)inbuf, (char*)conffile, 27);     // Constants are located below $4000, so copy
+        filehandle = createfilewithpath((char*)inbuf); // filename into temp buffer to keep IDE_PATH happy.
         if (filehandle == 0)
         {
             conprint("Failed to open file\r");
@@ -522,16 +394,12 @@ void main()
     writenextreg(0x06, nextreg6 & 0x7d); // disable turbo key & 50/60 switch (leave other bits alone)
     nextreg7 = readnextreg(0x07);
     writenextreg(0x07, 3); // 28MHz
+              
+	*((char *)23692) = 255; // disable scroll? prompt
+	printversion();
 
-    // cls
-    memset((unsigned char*)yofs[0],0,192*32);
-    memset((unsigned char*)yofs[0]+192*32,4,24*32);
-          
-    SETX(0);
-    
-    print("NextSync 1.0 by Jari Komppa");
-    print("http://iki.fi/sol");
-    SETY(scr_y+1);
+    // read Next core version - e.g. 3.01.10 will be 0x310a
+    corever = readnextreg(0x01) * 256 + readnextreg(0x0e);
 
     // select esp uart, set 17-bit prescalar top bits to zero
     UART_CTL = 16; 
@@ -548,7 +416,7 @@ void main()
         if (atcmd("\r\n", "ERROR", 5, inbuf)) 
         {
 #endif
-            print("Can't talk to esp.\nResetting esp, try again.");
+            println("Can't talk to esp.\nResetting esp, try again.");
             // reset esp
             writenextreg(0x02, 128);
             // wait for 5+ frames
@@ -570,8 +438,8 @@ void main()
 
     atcmd("ATE0\r\n", "OK", 2, inbuf); // command echo off; if on, we might match server name as OK/ERROR/BUSY =)
 
-    print("Connecting to "); SETY(scr_y-1); SETX(14);
-    print(fn);
+    println("Connecting to ");
+    println(fn);
 
 retryconnect:
 
@@ -585,11 +453,11 @@ retryconnect:
 
     if (atcmd(scratch, "OK", 2, inbuf))
     {
-        print("Unable to connect");
+        println("Unable to connect");
         goto bailout;
     }
         
-    print("Handshake..");
+    println("Handshake..");
     retrycount = 0;
 retryhandshake:
     // Check server version/request protocol
@@ -602,21 +470,21 @@ retryhandshake:
         {
             if (len == 0)
             {
-                print("Retry connect..");
+                println("Retry connect..");
                 goto retryconnect;
             }
             flush_uart_hard();
-            print("Retry handshake..");
+            println("Retry handshake..");
             goto retryhandshake;
         }
-        print("Server version mismatch");
+        println("Server version mismatch");
         dp[len] = 0;
-        print(dp);
-        printnum(len); SETY(scr_y+1);
+        println(dp);
+        printnum(len);
         goto closeconn;
     }
 
-    print("Connected\n");
+    println("Connected\r");
     
     do
     {        
@@ -631,15 +499,12 @@ retrynext:
             fn[fnlen] = 0;
             if (*fn)
             {
-                print(fn);
-                print("Size:\nXfer:"); SETX(5); SETY(scr_y - 2);
-                printnum(filelen);
+                println(fn);
                 if (transfer(fn, inbuf))
                 {
-                    print("Lost connection.");
+                    println("Lost connection.");
                     goto closeconn;
                 }
-                checkscroll();
             }
         }
         else
@@ -652,21 +517,15 @@ retrynext:
     while (*fn != 0);
     
 closeconn:
-    SETY(scr_y + 2);
-    checkscroll();
-    print("Shutting down..");
+    println("Shutting down..");
     cipxfer("Bye", 3, inbuf, &len, &dp);
     atcmd("AT+CIPCLOSE\r\n", "", 0, inbuf);
-    if (scr_y > 16)
-    {
-        scrollup();
-        scr_y -= 8;
-    }
 bailout:
     atcmd("AT+UART_CUR=115200,8,1,0,0\r\n", "", 0, inbuf); // restore uart speed
-    print("All done");
+    println("All done");
     writenextreg(0x07, nextreg7); // restore cpu speed
     writenextreg(0x06, nextreg6); // restore turbo key & 50/60 switch
+	*((char *)23692) = scr_ct; // restore old value of scr_ct
 terminate:
     return;
 }
