@@ -15,12 +15,14 @@ import time
 import glob
 import sys
 import os
+import re
 
 assert sys.version_info >= (3, 6) # We need 3.6 for f"" strings.
 
 PORT = 2048    # Port to listen on (non-privileged ports are > 1023)
 VERSION3 = "NextSync3"
-VERSION = "NextSync4"
+VERSION4 = "NextSync4"
+VERSIONINFO = "NextSync3 (unpacked)/NextSync4 (RLE compression)"
 IGNOREFILE = "syncignore.txt"
 SYNCPOINT = "syncpoint.dat"
 MAX_PAYLOAD = 1024
@@ -114,9 +116,75 @@ def warnings():
     print(f"{severity}: Ready to sync {len(initial)} files, {total/1024:.2f} kilobytes.")
     print()
 
+# Matches runs, but outputs extra item after a run, which 
+# we need to skip.. TODO: find a regex that doesn's need
+# the skip (if possible)
+compress_splitter = re.compile(b"((.)\\2{2,8191})",re.DOTALL)
+
+def compress_rle(d, fn):
+    l = []
+    splits = compress_splitter.split(d)
+    prevblock = 1
+    count = 0
+    skip = 0
+    for x in splits:
+        if skip == 0:
+            lx = len(x)
+            count += lx
+            if lx > 0:
+                if lx > 2 and x[0] == x[1] and x[0] == x[2]:
+                    # run block
+                    # Due to regex matching up to 8192 bytes,
+                    # the runs are always suitably sized
+                    if prevblock == 1:
+                        l += [0] # add empty skip block
+                    if lx < 0xff:
+                        l += [lx]
+                    else:
+                        l += [0xff, lx >> 8, lx & 0xff]
+                    l += [x[0]]
+                    prevblock = 1
+                    skip = 1
+                else:
+                    # skip block
+                    y = x
+                    if prevblock == 0:
+                        l += [1, x[0]] # add 1 length run block
+                        y = x[1:]
+                        prevblock = 1
+                    ly = len(y)
+                    if ly > 0:
+                        while ly > 8192:
+                            # If too long block, split to 8k segs
+                            l += [0xff, 8192 >> 8, 8192 & 0xff]
+                            l += y[:8192]
+                            y = y[8192:]
+                            l += [1, y[0]] # add a 1 byte RLE
+                            y = y[1:]
+                            ly = len(y)
+
+                        if ly < 0xff:
+                            l += [ly]
+                        else:
+                            l += [0xff, ly >> 8, ly & 0xff]
+                        l += y
+
+                        prevblock = 0
+        else:
+            skip = 0            
+    return bytes(l)
+
+# If you feel the need for speed, use this instead of the
+# python implementation. At your own risk.
+def compress_rle_offline(d, fn):
+    os.system('pack.exe "' + fn + '" packfile.temp')
+    with open("packfile.temp", 'rb') as f:
+        return f.read()
+
+
 def main():
-    print(f"NextSync server, protocol version {VERSION}")
-    print("by Jari Komppa 2020")
+    print(f"NextSync server, protocol info: {VERSIONINFO}")
+    print("by Jari Komppa 2023")
     print()
     hostinfo = socket.gethostbyname_ex(socket.gethostname())    
     print(f"Running on host:\n    {hostinfo[0]}")
@@ -147,7 +215,8 @@ def main():
         retries = 0
         packets = 0
         restarts = 0
-        gee = 0        
+        gee = 0
+        rlepack = 0
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", PORT))
             s.listen()
@@ -183,6 +252,14 @@ def main():
                         sendpacket(conn, packet, 0)
                         packets += 1
                         totalbytes += len(packet)
+                        rlepack = 0
+                    elif data == b"Sync4":
+                        print(f'{timestamp()} | Sending "{VERSION4}"')
+                        packet = str.encode(VERSION4)
+                        sendpacket(conn, packet, 0)
+                        packets += 1
+                        totalbytes += len(packet)
+                        rlepack = 1
                     elif data == b"Next" or data == b"Neex": # Really common mistransmit. Probably uart-esp..
                         if data == b"Neex":
                             gee += 1
@@ -204,6 +281,12 @@ def main():
                             with open(f[fn][0], 'rb') as srcfile:
                                 filedata = srcfile.read()
                             payloadbytes += len(filedata)
+                            if rlepack:
+                                print(f"{timestamp()} Compressing..")
+                                l0 = len(filedata)
+                                filedata = compress_rle(filedata, f[fn][0])
+                                l1 = len(filedata)
+                                print(f"{timestamp()} Compression ratio {l1*100/l0:.2f}%")
                             if f[fn][0] not in knownfiles:
                                 knownfiles.append(f[fn][0])
                             fileofs = 0
