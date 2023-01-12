@@ -9,6 +9,9 @@
 	.globl _freepage
 	.globl _makepath
 	.globl _conprint
+	.globl _println
+	.globl _memcmp
+	.globl _strinstr
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -187,6 +190,7 @@ _makepath::
     
 
 ;extern void conprint(char *txt) __z88dk_fastcall;
+; hl = pointer to text
 _conprint:
     ld iy, (_osiy)
     ld a, (hl)
@@ -195,4 +199,90 @@ _conprint:
     rst 16
     inc hl
     jp _conprint
+
+;hl = pointer to text
+_println:
+	ld de, #0x5c8c
+	ld a, #0xff
+	ld (de), a ; disable scroll? prompt
+	call _conprint
+	ld a, #0x0d ; newline
+	rst 16
+	ret
+
+; stack: retaddr, ptr_a, ptr_b, len, return l
+_memcmp:
+	pop af ; retaddr
+	pop hl ; ptr_a
+	pop de ; ptr_b
+	pop bc ; len
+	push bc
+	push de
+	push hl
+	push af ; stack restored
+	ld b,c
+
+; c = len, hl = ptr_a, de = ptr_b, stack = retaddr
+; returns l = 1, nz for mismatch
+asm_memcmp:
+memcmploop:
+	ld a, (de)
+	cp (hl)
+	jr nz, memcmpmismatch
+	inc de
+	inc hl
+	djnz memcmploop
+	ld l, #0
+	ret
+memcmpmismatch:
+	ld l, #1
+	ret
+
+; stack: retaddr, ptr_a, ptr_b, len_a, len_b
+; is b in a?, return value in l
+_strinstr:
+	pop af ; retaddr
+	pop de ; ptr_a
+	pop ix ; ptr_b
+	pop hl ; len_a
+	pop bc ; len_b
+	push bc
+	push hl
+	push ix
+	push de
+	push af ; stack restored
+	
+	or a
+	sbc hl, bc
+	jr c, strinstr_notfound ; len_b > len_a
+	; hl = indices to check, bc = how much to check
+	push hl
+strinstr_loop:
+	push ix
+	pop hl
+	ld c, b
+	; hl, de = strings to compare, c = len, stack: indices to check
+	push hl
+	push de
+	push bc
+	call asm_memcmp
+	pop bc
+	pop de
+	pop ix
+	pop hl
+	jr z, strinstr_found
+	inc de
+	dec hl
+	ld h, a
+	or a, l
+	jr z, strinstr_notfound
+	push hl
+	jp strinstr_loop
+
+strinstr_found:
+	ld l, #1
+	ret
+strinstr_notfound:
+	ld l, #0
+	ret
 _endof_esxdos:	

@@ -4,13 +4,11 @@ extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned s
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void makepath(char *pathspec); // must be 0xff terminated!
 extern void conprint(char *txt) __z88dk_fastcall;
-extern void println(char * t);
-extern unsigned char uitoa(unsigned long v, char *b);
-extern void printnum(unsigned long v);
-extern unsigned char strinstr(char *a, char *b, unsigned short len, char blen);
+extern void println(char * t) __z88dk_fastcall;
+extern unsigned char strinstr(char *a, char *b, unsigned short len, unsigned short blen);
 extern void printhelp();
 extern void printversion();
-extern char memcmp(char *a, char *b, unsigned char l);
+extern char memcmp(char *a, char *b, short l);
 extern unsigned char parse_cmdline(char *f);
 extern unsigned char createfilewithpath(char *fn);
 

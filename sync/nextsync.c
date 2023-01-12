@@ -23,6 +23,21 @@ layers in play.
   something we control again so it's not a complete unknown. Also, network stacks on
   PCs are more stable than what we have on the speccy side so we can largely ignore it.  
 
+Memory map plan:
+
+bank 0: rom
+bank 1: dot
+
+bank 2: ULA screen, system vars
+bank 3: free(?)
+
+bank 4: output buffer
+bank 5: output buffer
+
+bank 6: input buffer
+bank 7: input buffer
+
+
 */
 
 #include "nextsync.h"
@@ -480,7 +495,6 @@ retryhandshake:
         println("Server version mismatch");
         dp[len] = 0;
         println(dp);
-        printnum(len);
         goto closeconn;
     }
 
@@ -526,6 +540,7 @@ bailout:
     writenextreg(0x07, nextreg7); // restore cpu speed
     writenextreg(0x06, nextreg6); // restore turbo key & 50/60 switch
 	*((char *)23692) = scr_ct; // restore old value of scr_ct
+    // TODO: restore border (from basic var)
 terminate:
     return;
 }
