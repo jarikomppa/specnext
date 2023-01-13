@@ -248,7 +248,10 @@ asm_memcmp:
 
 ; stack: retaddr, ptr_a, ptr_b, len_a, len_b
 ; is b in a?, return value in l
+strinstr_ixstore:
+	.word 0
 _strinstr:
+	ld (#strinstr_ixstore), ix
     pop af ; retaddr
     pop de ; ptr_a
     pop ix ; ptr_b
@@ -259,7 +262,9 @@ _strinstr:
     push ix
     push de
     push af ; stack restored
-    or a
+    ld a, c
+	or a
+	jr z, strinstr_found
     sbc hl, bc
     jr c, strinstr_notfound ; len_b > len_a
 	inc hl
@@ -288,8 +293,10 @@ strinstr_loop:
     jp strinstr_loop
 strinstr_found:
     ld l, #1
+	ld ix, (#strinstr_ixstore)
     ret
 strinstr_notfound:
     ld l, #0
+	ld ix, (#strinstr_ixstore)
     ret
 _endof_esxdos:	
