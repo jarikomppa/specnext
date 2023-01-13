@@ -2,7 +2,7 @@ extern unsigned char fopen(unsigned char *fn, unsigned char mode);
 extern void fclose(unsigned char handle);
 extern unsigned short fread(unsigned char handle, unsigned char* buf, unsigned short bytes);
 extern void fwrite(unsigned char handle, unsigned char* buf, unsigned short bytes);
-extern void makepath(char *pathspec); // must be 0xff terminated!
+//extern void makepath(char *pathspec); // must be 0xff terminated!
 extern void conprint(char *txt) __z88dk_fastcall;
 extern void println(char * t) __z88dk_fastcall;
 extern unsigned char strinstr(char *a, char *b, unsigned short len, unsigned short blen);
@@ -10,7 +10,7 @@ extern void printhelp();
 extern void printversion();
 extern char memcmp(char *a, char *b, short l);
 extern unsigned char parse_cmdline(char *f) __z88dk_fastcall;
-extern unsigned char createfilewithpath(char *fn);
+extern unsigned char createfilewithpath(char *fn) __z88dk_fastcall;
 
 extern void writenextreg(unsigned char reg, unsigned char val);
 extern unsigned char readnextreg(unsigned char reg);

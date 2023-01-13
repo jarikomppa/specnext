@@ -29,27 +29,3 @@ void printhelp()
 		"Please read nextsync.txt for\r"
 		"further instructions.\r\r");
 }
-
-
-unsigned char createfilewithpath(char * fn)
-{
-    unsigned char filehandle;
-    char * slash;
-    filehandle = fopen(fn, 2 + 0x0c);  // write + create new file, delete existing
-    if (filehandle) return filehandle;
-    // Okay, couldn't create the file, so let's try to make the path.
-    // We need to call makepath for each directory in the tree to build
-    // complex paths.
-    slash = fn;    
-    while (*slash) 
-    {
-        slash++;
-        if (*slash == '/')
-        {
-            *slash = 0xff; // makepath wants strings to end with 0xff
-            makepath(fn);    
-            *slash = '/';
-        }
-    }
-    return fopen(fn, 2 + 0x0c); // if it still doesn't work, well, it doesn't.
-}

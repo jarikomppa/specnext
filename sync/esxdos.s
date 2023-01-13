@@ -7,12 +7,13 @@
 	.globl _readnextreg
 	.globl _allocpage
 	.globl _freepage
-	.globl _makepath
+;	.globl _makepath
 	.globl _conprint
 	.globl _println
 	.globl _memcmp
 	.globl _strinstr
 	.globl _parse_cmdline
+	.globl _createfilewithpath
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -173,21 +174,21 @@ _freepage::
 	ret
 
 ; extern void makepath(char *pathspec); // must be 0xff terminated!
-_makepath::
-    pop de  ; return address
-    pop hl  ; char *pathspec
-    push hl ; restore stack
-    push de
-    ld iy, (_osiy)
+;_makepath::
+;    pop de  ; return address
+;    pop hl  ; char *pathspec
+;    push hl ; restore stack
+;    push de
+;    ld iy, (_osiy)
    
-    ld a, #0x02 ; make path
-    exx                             ; place parameters in alternates
-    ld      de, #0x01b1             ; IDE_PATH
-    ld      c, #7                   ; "usually 7, but 0 for some calls"
-    rst     #0x8
-    .db     #0x94                   ; +3dos call
+;    ld a, #0x02 ; make path
+;    exx                             ; place parameters in alternates
+;    ld      de, #0x01b1             ; IDE_PATH
+;    ld      c, #7                   ; "usually 7, but 0 for some calls"
+;    rst     #0x8
+;    .db     #0x94                   ; +3dos call
 
-	ret
+;	ret
     
 
 ;extern void conprint(char *txt) __z88dk_fastcall;
@@ -314,9 +315,60 @@ cmdline_loop:
 	ld c, #1 ; string length > 0
 	djnz cmdline_loop
 cmdline_done:
-	ld a, #0
+	xor a
 	ld (de), a
 	ld l, c
+	ret
+
+;unsigned char createfilewithpath_(char * fn) __z88dk_fastcall	
+; hl = filename
+_createfilewithpath:
+    ld iy, (_osiy)
+	ld b, #0x0e; mode = 2 + 0xc, write + create new file, delete existing
+	ld a, #'*'
+	push hl
+	rst #0x8
+	.db #0x9a ; esxdos: fopen
+	pop hl
+	jr  c, cfwp_openfail
+	ld  l, a; a = file handle
+	ret
+cfwp_openfail:
+	ld d, h
+	ld e, l
+cfwp_loop:
+	ld a, (hl)
+	or a
+	jr z, cfwp_pathdone
+	cp #'/'
+    jr nz, cfwp_notslash
+	ld (hl), #0xff ; replace slash with path terminator
+	ex de,hl
+	push de
+	push hl
+    ld a, #0x02    ; make path
+    exx            ; place parameters in alternates
+    ld de, #0x01b1 ; IDE_PATH
+    ld c, #7       ; "usually 7, but 0 for some calls"
+    rst #0x8
+    .db #0x94      ; +3dos call
+	pop hl
+	pop de
+	ex de,hl
+	ld (hl), #'/' ; restore slash
+cfwp_notslash:
+    inc hl
+	jp cfwp_loop	
+cfwp_pathdone:	
+	ex de,hl
+	ld b, #0x0e; mode = 2 + 0xc, write + create new file, delete existing
+	ld a, #'*'
+	rst #0x8
+	.db #0x9a ; esxdos: fopen
+	jr  nc, cfwp_openok
+	xor a
+cfwp_openok:	
+	ld  l, a; a = file handle
 	ret
 
 _endof_esxdos:	
