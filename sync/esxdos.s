@@ -222,9 +222,6 @@ _memcmp:
 	push af ; stack restored
 	ld b,c
 
-; c = len, hl = ptr_a, de = ptr_b, stack = retaddr
-; returns l = 1, nz for mismatch
-asm_memcmp:
 memcmploop:
 	ld a, (de)
 	cp (hl)
@@ -238,51 +235,61 @@ memcmpmismatch:
 	ld l, #1
 	ret
 
+; b = len, hl = ptr_a, de = ptr_b, stack = retaddr
+; returns nz for mismatch, destroys b, de, hl
+asm_memcmp:
+	ld a, (de)
+	cp (hl)
+	ret nz
+	inc de
+	inc hl
+	djnz asm_memcmp
+	ret
+
 ; stack: retaddr, ptr_a, ptr_b, len_a, len_b
 ; is b in a?, return value in l
 _strinstr:
-	pop af ; retaddr
-	pop de ; ptr_a
-	pop ix ; ptr_b
-	pop hl ; len_a
-	pop bc ; len_b
-	push bc
-	push hl
-	push ix
-	push de
-	push af ; stack restored
-	
-	or a
-	sbc hl, bc
-	jr c, strinstr_notfound ; len_b > len_a
-	; hl = indices to check, bc = how much to check
-	push hl
+    pop af ; retaddr
+    pop de ; ptr_a
+    pop ix ; ptr_b
+    pop hl ; len_a
+    pop bc ; len_b
+    push bc
+    push hl
+    push ix
+    push de
+    push af ; stack restored
+    or a
+    sbc hl, bc
+    jr c, strinstr_notfound ; len_b > len_a
+	inc hl
+	ld b, c
+    ; hl = indices to check, b = how much to check
+    push hl
 strinstr_loop:
-	push ix
-	pop hl
-	ld c, b
-	; hl, de = strings to compare, c = len, stack: indices to check
-	push hl
-	push de
-	push bc
-	call asm_memcmp
-	pop bc
-	pop de
-	pop ix
-	pop hl
-	jr z, strinstr_found
-	inc de
-	dec hl
-	ld h, a
-	or a, l
-	jr z, strinstr_notfound
-	push hl
-	jp strinstr_loop
-
+    push ix
+    pop hl ; ptr_b
+    ; hl, de = strings to compare, c = len, stack: indices to check
+    push hl
+    push de
+    push bc
+    call asm_memcmp ; returns z for match
+    pop bc ; how much to check
+    pop de ; ptr_a
+    pop ix ; ptr_b
+    pop hl ; indices to check
+    jr z, strinstr_found
+    inc de ; move forward in ptr_a
+    dec hl
+    ld a, h
+    or l
+    jr z, strinstr_notfound
+    push hl ; how much to check
+    jp strinstr_loop
 strinstr_found:
-	ld l, #1
-	ret
+    ld l, #1
+    ret
 strinstr_notfound:
-	ld l, #0
-	ret
+    ld l, #0
+    ret
 _endof_esxdos:	
