@@ -9,7 +9,7 @@ extern unsigned char strinstr(char *a, char *b, unsigned short len, unsigned sho
 extern void printhelp();
 extern void printversion();
 extern char memcmp(char *a, char *b, short l);
-extern unsigned char parse_cmdline(char *f);
+extern unsigned char parse_cmdline(char *f) __z88dk_fastcall;
 extern unsigned char createfilewithpath(char *fn);
 
 extern void writenextreg(unsigned char reg, unsigned char val);

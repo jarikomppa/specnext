@@ -30,26 +30,6 @@ void printhelp()
 		"further instructions.\r\r");
 }
 
-unsigned char parse_cmdline(char *f)
-{
-    unsigned char i;   
-    
-    if (!cmdline)
-    {
-        f[0] = 0;
-        return 0;
-    }
-
-    i = 0;
-    while (i < 127 && cmdline[i] != 0 && cmdline[i] != 0xd && cmdline[i] != ':')
-    {
-        f[i] = cmdline[i];
-        i++;        
-    }
-
-    f[i] = 0;
-    return i;
-}
 
 unsigned char createfilewithpath(char * fn)
 {

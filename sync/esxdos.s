@@ -12,6 +12,7 @@
 	.globl _println
 	.globl _memcmp
 	.globl _strinstr
+	.globl _parse_cmdline
 	.area _CODE
 
 ; TODO: AF, BC, DE, HL changed by esxdos calls, need to preserve?
@@ -249,9 +250,9 @@ asm_memcmp:
 ; stack: retaddr, ptr_a, ptr_b, len_a, len_b
 ; is b in a?, return value in l
 strinstr_ixstore:
-	.word 0
+    .word 0
 _strinstr:
-	ld (#strinstr_ixstore), ix
+    ld (#strinstr_ixstore), ix
     pop af ; retaddr
     pop de ; ptr_a
     pop ix ; ptr_b
@@ -263,40 +264,59 @@ _strinstr:
     push de
     push af ; stack restored
     ld a, c
-	or a
-	jr z, strinstr_found
-    sbc hl, bc
+    or a
+    jr z, strinstr_found
+    sbc hl, bc ; hl = indices to check
     jr c, strinstr_notfound ; len_b > len_a
-	inc hl
-	ld b, c
-    ; hl = indices to check, b = how much to check
-    push hl
 strinstr_loop:
-    push ix
-    pop hl ; ptr_b
-    ; hl, de = strings to compare, c = len, stack: indices to check
     push hl
     push de
-    push bc
+    ld b, c ; b = how much to check (len_b)
+    push ix
+    pop hl ; hl, de = strings to compare, c = len, stack: indices to check
     call asm_memcmp ; returns z for match
-    pop bc ; how much to check
     pop de ; ptr_a
-    pop ix ; ptr_b
     pop hl ; indices to check
     jr z, strinstr_found
     inc de ; move forward in ptr_a
-    dec hl
     ld a, h
     or l
     jr z, strinstr_notfound
-    push hl ; how much to check
+    dec hl
     jp strinstr_loop
 strinstr_found:
     ld l, #1
-	ld ix, (#strinstr_ixstore)
+    ld ix, (#strinstr_ixstore)
     ret
 strinstr_notfound:
     ld l, #0
-	ld ix, (#strinstr_ixstore)
+    ld ix, (#strinstr_ixstore)
     ret
+
+; unsigned char parse_cmdline(char *f) __z88dk_fastcall
+_parse_cmdline:
+	ex de,hl
+	ld c, #0
+	ld hl, (_cmdline)
+	ld a, h
+	or l
+	jr z, cmdline_done
+	ld b, #200 ; 2x100
+cmdline_loop:
+	ld a, (hl)
+	or a ; cp #0
+	jr z, cmdline_done
+	cp #0xd
+	jr z, cmdline_done
+	cp #':'
+	jr z, cmdline_done
+	ldi ; also decrements bc	
+	ld c, #1 ; string length > 0
+	djnz cmdline_loop
+cmdline_done:
+	ld a, #0
+	ld (de), a
+	ld l, c
+	ret
+
 _endof_esxdos:	

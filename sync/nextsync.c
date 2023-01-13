@@ -539,8 +539,8 @@ bailout:
     println("All done");
     writenextreg(0x07, nextreg7); // restore cpu speed
     writenextreg(0x06, nextreg6); // restore turbo key & 50/60 switch
-	*((char *)23692) = scr_ct; // restore old value of scr_ct
-    // TODO: restore border (from basic var)
+	*((char *)23692) = scr_ct; // restore old value of scr_ct    
+    gPort254 = (*((char*)23624) >> 3) & 7; // restore border (from basic var)
 terminate:
     return;
 }
