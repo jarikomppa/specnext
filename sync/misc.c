@@ -8,7 +8,7 @@ void printversion()
 {
     conprint(
 	   //12345678901234567890123456789012
-		"NextSync 1.2 by Jari Komppa\r"
+		"NextSync 1.2+dev by Jari Komppa\r"
 		"http://iki.fi/sol\r");
 }
 
