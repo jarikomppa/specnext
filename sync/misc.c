@@ -1,8 +1,5 @@
 extern void conprint(char *txt) __z88dk_fastcall;
 extern void println(char *txt) __z88dk_fastcall;
-extern char *cmdline;
-extern unsigned char fopen(unsigned char *fn, unsigned char mode);
-extern void makepath(char *pathspec); // must be 0xff terminated!
 
 void printversion()
 {

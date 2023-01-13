@@ -98,49 +98,32 @@ _fwrite::
 
 ;extern void writenextreg(unsigned char reg, unsigned char val);
 _writenextreg::
-	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    hl
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-	ld      l,      5 (ix) ; val
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-	ld      a,      l
-    out     (c),    a
-    pop     bc    
-
-    pop af
-    pop hl
-	pop ix
-    ret
-
+	pop af
+	pop hl
+	push hl
+	push af
+	ld bc, #0x243B
+	ld a, l
+	out (c), a
+	inc b
+	ld a, h
+	out (c),a
+	ret
 
 ;extern unsigned char readnextreg(unsigned char reg);
 _readnextreg::
-	push	ix
-	ld	    ix,     #0
-	add	    ix,     sp
-	push    af
-
-	ld	    a,      4 (ix) ; reg
-
-    push    bc
-    ld      bc,     #0x243B   ; nextreg select
-    out     (c),    a
-    inc     b                 ; nextreg i/o
-    in      a,      (c)
-    ld      l,      a
-    pop     bc    
-
-    pop af
-	pop ix
-    ret
+	pop af
+	pop hl
+	push hl
+	push af
+	ld bc, #0x243B
+	ld a, l
+	out (c), a
+	inc b
+	ld a, h
+	in a,(c)
+	ld l, a
+	ret
 
 ; Note: most likely requires most of the normal banks to be mapped to work
 
