@@ -3,7 +3,24 @@
 	.globl _receive
     .globl _flush_uart
     .globl _flush_uart_hard
+    .globl _receive_slow
 	.area _CODE
+
+; Read from UART with delay grace period; return in l
+_receive_slow:
+    ld l, #200
+    ld bc, #0x133b ; UART_TX
+rs_loop:
+    in a, (c) ; on read, bottom bit of UART_TX says "data available"
+	rrca
+	jr c, rs_gotdata
+    dec l
+    ret z
+    jr rs_loop
+rs_gotdata:
+    inc b ; UART_RX
+    in l, (c)
+    ret
 
 ; Read from UART until empty. No paramters.
 _flush_uart:
@@ -108,8 +125,7 @@ loop_entry:
     sbc hl, de
     ld a, h
     or l
-    ld l, a
-    
+    ld l, a    
     ret    
 	
 _endof_uart:

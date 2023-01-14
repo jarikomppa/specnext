@@ -19,6 +19,7 @@ extern void freepage(unsigned char page);
 
 extern void flush_uart();
 extern void flush_uart_hard();
+unsigned char receive_slow();
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker

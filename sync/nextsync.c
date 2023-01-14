@@ -77,22 +77,6 @@ void setupuart(char mode)
    UART_RX = (unsigned char)(prescalar) & 0x7f;
 }
 
-unsigned char receive_slow()
-{
-#ifdef SYNCSLOW
-    unsigned short timeout = 200;
-#else
-    unsigned short timeout = 20;
-#endif    
-    while (timeout && !(UART_TX & 1)) 
-    { 
-        // wait for data.
-        timeout--; 
-    }
-    if (!timeout) return 0;
-    return UART_RX;
-}
-
 void send(const char *b, unsigned char bytes)
 {
     unsigned short timeout = TIMEOUT;
