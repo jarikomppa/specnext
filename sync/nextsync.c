@@ -77,30 +77,6 @@ void setupuart(char mode)
    UART_RX = (unsigned char)(prescalar) & 0x7f;
 }
 
-// Just flush as much as is in the queue right now.
-void flush_uart()
-{
-    while (UART_TX & 1)
-    {
-        UART_RX;
-    }
-} 
-
-// Do the maximum effort to empty the uart.
-void flush_uart_hard()
-{
-    unsigned short timeout = TIMEOUT_FLUSHUART;
-    while (timeout)
-    {
-        if (UART_TX & 1)
-        {
-            UART_RX;
-            timeout = TIMEOUT_FLUSHUART;
-        }
-        timeout--;
-    }
-}
-
 unsigned char receive_slow()
 {
 #ifdef SYNCSLOW

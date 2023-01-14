@@ -1,7 +1,37 @@
 	.module uart
 	.globl _checksum
 	.globl _receive
+    .globl _flush_uart
+    .globl _flush_uart_hard
 	.area _CODE
+
+; Read from UART until empty. No paramters.
+_flush_uart:
+    ld bc, #0x133b ; UART_TX
+    in a, (c) ; on read, bottom bit of UART_TX says "data available"
+	rrca
+	ret	nc
+    inc b  ; UART_RX
+	in	a, (c) ; read and discard
+	jr _flush_uart
+
+; Read from UART until it's been silent for n milliseconds. No parameters
+_flush_uart_hard:
+    ld bc, #0x133b ; UART_TX
+    ld hl, #10000   ; Busy loop is ~12+4+12+6+4+4+12=54 clocks, 10k@28MHz = ~20ms
+fuh_checkinput:
+    in a, (c)
+    rrca
+    jr nc, fuh_loop
+    inc b   ; UART_RX
+    in a, (c)
+    jr _flush_uart_hard
+fuh_loop:
+    dec hl
+    ld a, h
+    or a, l
+    jr nz, fuh_checkinput    
+    ret
 
 ;extern unsigned short receive(char *b)
 _receive::

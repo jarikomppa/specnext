@@ -111,18 +111,16 @@ _writenextreg::
 	ret
 
 ;extern unsigned char readnextreg(unsigned char reg);
+; input and output in l
 _readnextreg::
-	pop af
-	pop hl
-	push hl
-	push af
+	push bc
 	ld bc, #0x243B
 	ld a, l
 	out (c), a
 	inc b
-	ld a, h
 	in a,(c)
 	ld l, a
+	pop bc
 	ret
 
 ; Note: most likely requires most of the normal banks to be mapped to work

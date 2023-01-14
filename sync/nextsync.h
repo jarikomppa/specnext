@@ -13,9 +13,12 @@ extern unsigned char parse_cmdline(char *f) __z88dk_fastcall;
 extern unsigned char createfilewithpath(char *fn) __z88dk_fastcall;
 
 extern void writenextreg(unsigned char reg, unsigned char val);
-extern unsigned char readnextreg(unsigned char reg);
+extern unsigned char readnextreg(unsigned char reg) __z88dk_fastcall;
 extern unsigned char allocpage();
 extern void freepage(unsigned char page);
+
+extern void flush_uart();
+extern void flush_uart_hard();
 
 // xxxsmbbb
 // where b = border color, m is mic, s is speaker
