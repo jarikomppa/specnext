@@ -46,11 +46,12 @@ int init_gpio()
   return 0;
 }
 
+
 void gpio_deinit()
 {
     if (gpio_mmap)
     {
-        munmap(gpio_mmap, 4*1024);
+        munmap((void*)gpio_mmap, 4*1024);
     }
     gpio_mmap = 0;
 }
@@ -63,21 +64,30 @@ void set_gpio_io(int pin, int output)
     int block = pin / 10;
     int pinofs = (pin % 10) * 3;
     // mask out the 3 bits and set the one bit as requested
-    *(gpio_mmap + block) = (*(gpio_mmap + block) & ~(7 << pinofs)) | (output << pinofs);
+     __sync_synchronize(); 
+    unsigned int d = *(gpio_mmap + block);
+    __sync_synchronize(); 
+    *(gpio_mmap + block) = (d & ~(7 << pinofs)) | (output << pinofs);
+    __sync_synchronize(); 
 }
 
 void set_gpio_val(int pin, int val)
 {
     if (!gpio_mmap) return;
     int block = (val ? 7 : 10); // SET and CLEAR register offsets
+    __sync_synchronize(); 
     *(gpio_mmap + block) = 1 << pin;
+    __sync_synchronize(); 
 }
 
 int get_gpio_val(int pin)
 {
     if (!gpio_mmap) return 0;
     int block = 13; // LEVEL register offset
-    return !!(*(gpio_mmap + block) & (1 << pin));
+    __sync_synchronize(); 
+    int v = !!(*(gpio_mmap + block) & (1 << pin)); 
+    __sync_synchronize(); 
+    return v;
 }
 
 std::queue<unsigned char> dq;

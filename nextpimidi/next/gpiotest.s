@@ -42,6 +42,7 @@
     ld d, 1 ; current flag
 
     ld bc, 0
+    ld hl, 0
 loop:
     push bc
 
@@ -82,6 +83,8 @@ nextregop:
     pop bc
     djnz loop
     dec c
+    jr nz, loop
+    dec h
     jr nz, loop
 
     PRINT "all done\r\0"
