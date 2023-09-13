@@ -60,18 +60,14 @@ nextreg_pos_init:
     or 2
     out (c), a      ; enable turbosound
 
-;; ok
-
+    ; Play silent note on all 9 channels
     ld hl, 0
-    ld a,0
+    ld a, 0
     ld b, 9
 clearchannels:
     call playay
     inc a
     djnz clearchannels
-
-
-;;; kosh
 
     ld a, 1
     ld h, 7
@@ -86,7 +82,6 @@ clearchannels:
     call setay
 
 forever:
-    PRINT "."
     call read_gpio
     and 0xf0
     ld b, a
@@ -97,22 +92,20 @@ forever:
     ld a, b
     cp 0x80
     jr nz, notnoteoff
-    PRINT "noteoff"
     call stopnote    
     jp forever
 notnoteoff:    
     cp 0x90
     jr nz, notnoteon
-    PRINT "noteon"
-;    srl l
-;    srl l
-;    ld a, l
-;    cp 15
-;    jr nc, under15
+    srl l
+    srl l
+    ld a, l
+    cp 15
+    jr c, under15
     ld a, 15
-;under15:    
+under15:    
     ld l, a
-    call playnote
+    call playnote ; h = note, l = (volume/4)<15?(volume/4):15 (so 0..50% volume ramp up and max vol after that)
     jp forever
 notnoteon:
     jp forever
@@ -211,30 +204,31 @@ chipdone:
     ld a, b
     add a, 8
     push hl
-    ld h, a
+    ld h, a ; h is now channel + 8
     ld a, l
     and 15
     ld l, a
-    call setay ; volume in h, l
+    call setay ; volume reg in h (8 + channel), value in l
     pop de
-    ld e, 0
-    push de
+    ld e, d
+    ld d, 0
+    push de ; both stack top and de are now just note
     ld hl, note_fine
     add hl, de
     ld a, b
     add a
-    ld b, a
+    ld b, a ; b = 2*channel
     ld a, (hl)
-    ld h, b
-    ld l, a
+    ld h, b ; h is now 2*channel
+    ld l, a ; l is now fine value for note
     call setay ; set fine 
     pop de
     ld hl, note_coarse
     add hl, de
     ld a, (hl)
     ld h, b
-    inc h
-    ld l, a
+    inc h   ; h is now 2*channel+1
+    ld l, a ; l is note value for coarse
     call setay
     pop hl
     pop de
@@ -250,24 +244,23 @@ playnote:
     push hl
     ld a, (nextch)
     call playay
-    ld d, h
-    ld b, a
-    ld c, 0
+    ld d, h ; d = note
+    ld c, a ; bc = channel
+    ld b, 0
     ld hl, chnote
     add hl, bc
-    ld (hl), d
+    ld (hl), d ; store note to channel array (for noteoff)
     pop hl
     pop de
     pop bc
+    ; increment nextch for next playnote
     ld a, (nextch)
     inc a
-    ld (nextch), a
     cp 9
-    pop af
-    ret nz
-    push af
-    xor a
-    ld (nextch), a
+    jr nz, playnotedone
+    xor a ; nextch was 9, roll over to 0
+playnotedone:
+    ld (nextch), a 
     pop af
     ret
 
@@ -277,11 +270,11 @@ stopnote:
     push bc
     push de
     push hl
-    ld a, h
+    ld a, h ; a = note
     ld b, 9
     ld c, 0
     ld hl, chnote
-stopnoteloop:    
+stopnoteloop:    ; find channel for the note
     cp (hl)
     jr z, stopnotefound
     inc c
@@ -291,13 +284,14 @@ stopnoteloop:
     pop de
     pop bc
     pop af
-    ret
+    ret         ; didn't find it, must have been clobbered
 stopnotefound:
+    ; found, c = channel (0-8), (hl) = position in chnote
     ld (hl), 255
     ld a, c
     ld h, 0
     ld l, 0
-    call playay
+    call playay ; play silent note on the channel
     pop hl
     pop de
     pop bc
