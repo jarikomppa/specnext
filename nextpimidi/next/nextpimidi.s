@@ -17,40 +17,62 @@
 
     PUSHALL
 
-; specnext regs 0x90-0x93 - 32 bits
-; dead 0-1 (internal to pi0)
-; I2C 2-3 (-> RTC)
-; SPI 7-11 (-> SD)
-; UART 14-15
-; Pins 28-31 do not exist in pi0 hardware
+; Nextpi GPIO
+; ===========
+; - specnext regs 0x90-0x93 - 32 bits
+; - Pins 0-1 are dead (internal to pi0)
+; - Pins 2-3 I2C (-> RTC, probably doesn't work?)
+; - Pins 7-11 SPI (-> SD, very likely doesn't work)
+; - Pins 14-15 UART (-> term, pisend, etc)
+; - Pins 18-21 I2S (-> audio, works and is used)
+; - Pins 28-31 do not exist in pi0 hardware
+;
+; - Pins 24-27 reserved for app control
 ; 
 ; leaves..
 ; 
 ; 0x90------------------ 0x91------------------- 0x92------------------- 0x93------------------- (output enable)
 ; 0x98------------------ 0x99------------------- 0x9A------------------- 0x9B------------------- (i/o)
-; 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
-; -dead-I2C-          -SPI----------       -UART                                    -no hardware
+; 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+; XX XX XX XX          XX XX XX XX XX       XX XX       XX XX XX XX                   XX XX XX XX
+; -dead-I2C-          -SPI-----------       -UART       -I2S-------       -AppCtl---- -no hardware
+;             AA BB CC                            DD DD DD DD DD DD DD DD EE FF GG HH
+;            
+; A = pi-side 1 bit data counter
+; B = next-side 1 bit data counter
+; C = transfer direction, 0 = pi->next, 1 = next->pi. Controlled by next.
+; D = 8 bits of data (overlaps with I2S, so no sound while this is going)
+; E,F,G,H = App control. If a pattern of 0 0 0 0 ->  1 1 1 1 is seen, 
+;           service should clean up after itself and die.
+
+    STORENEXTREG NEXTREG_CPU_SPEED, store_NEXTREG_CPU_SPEED
+    STORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0
+    STORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_2, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_2
+    STORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_3
+    STORENEXTREG NEXTREG_PERIPHERAL3, store_NEXTREG_PERIPHERAL3
 
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
+    nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, 32+64 ; set pin 5 & 6 as write access
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_2, 0 ; read all GPIO bits in 0x9A
-    nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, 2 ; set pin 1 as write access
+    nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, 1+2+4+8 ; set first four bits as write
 
     ; Read current send counter
     ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_PI_GPIO_3
+    ld a, NEXTREG_PI_GPIO_0
     out (c), a
     inc b         ; nextreg i/o
     in a, (c)
-    and 1
+    srl a
+    and 32
     ; toggle bit
     ld d, a
-    ld a, 1
+    ld a, 32
     sub d    
     ld (flipflop), a
     add a
     ld (nextreg_pos_init+3), a
 nextreg_pos_init:    
-    nextreg NEXTREG_PI_GPIO_3, 0 ; say we're good for more data
+    nextreg NEXTREG_PI_GPIO_0, 0 ; say we're good for more data (value overwritten above)
 
     ld bc, 0x243B ; nextreg select
     ld a, NEXTREG_PERIPHERAL3
@@ -71,17 +93,33 @@ clearchannels:
 
     ld a, 1
     ld h, 7
-    ld l, 0x38 // enable voices 1-3, disable noise 1-3
+    ld l, 0x38 ; enable voices 1-3, disable noise 1-3
     call setchip
     call setay
-    inc a
+    inc a     ; same for chip 2..
     call setchip
     call setay
-    inc a
+    inc a    ; and chip 3
     call setchip
     call setay
 
+    call read_gpio_timeout
+    cp 'M'
+    jp nz, server_failed
+    call read_gpio_timeout
+    cp 'I'
+    jp nz, server_failed
+    call read_gpio_timeout
+    cp 'D'
+    jp nz, server_failed
+
+    ld hl, initialized
+    call printmsg
+
 forever:
+    in a, (0xfe) ; check for space
+    and 0x80
+    jp z, shutdown
     call read_gpio
     and 0xf0
     ld b, a
@@ -110,28 +148,81 @@ under15:
 notnoteon:
     jp forever
 
+shutdown:
+    ld hl, quitting
+    call printmsg
+
+cleanup:
+    call kill_server
+    RESTORENEXTREG NEXTREG_CPU_SPEED, store_NEXTREG_CPU_SPEED
+    RESTORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0
+    RESTORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_2, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_2
+    RESTORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_3
+    RESTORENEXTREG NEXTREG_PERIPHERAL3, store_NEXTREG_PERIPHERAL3
 
     POPALL
     ret
 
+server_failed:
+    ld hl, noserver
+    call printmsg
+    jp cleanup
+
+; return value in 'a'. If time out occurs, returns 0.
+read_gpio_timeout:
+    push hl
+    ld hl, 0
+    xor a
+tryloop:
+    call check_gpio
+    jr z, gotdata
+    dec hl
+    cp h
+    jr nz, tryloop
+    cp l
+    jr nz, tryloop
+    ret
+gotdata:
+    jp read_gpio    
+
+
+; returns z if data is ready for reading
+check_gpio:
+    push bc
+    push de
+    ld e, a
+    ld a, (flipflop) ; current flag
+    ld d, a
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_PI_GPIO_0
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    srl a
+    and 32
+    cp d
+    ld a, e
+    pop de
+    pop bc
+    ret
 
 ; returns data byte in 'a'; waits forever for data
 read_gpio:
     push bc
     push de
 
-
     ld a, (flipflop) ; current flag
     ld d, a
 
     ; Busy wait until data is available
     ld bc, 0x243B ; nextreg select
-    ld a, NEXTREG_PI_GPIO_3
+    ld a, NEXTREG_PI_GPIO_0
     out (c), a
     inc b         ; nextreg i/o
 wait_for_data:
     in a, (c)
-    and 1
+    srl a
+    and 32
     cp d
     jr nz, wait_for_data
 
@@ -145,16 +236,14 @@ wait_for_data:
     ld e, a
 
     ; toggle bit
-    ld a, 1
+    ld a, 32
     sub d
     ld d, a
-
-    add a,a
 
     ld (nextreg_pos_readgpio+3), a
     ; ready for more data
 nextreg_pos_readgpio:
-    nextreg NEXTREG_PI_GPIO_3, 0 ; overwritten above
+    nextreg NEXTREG_PI_GPIO_0, 0 ; overwritten above
 
     ld a, d
     ld (flipflop), a
@@ -298,6 +387,20 @@ stopnotefound:
     pop af
     ret
 
+    ; Transition from 0000 -> 1111 kills the server. Try a couple times with some delay.
+kill_server:
+    nextreg NEXTREG_PI_GPIO_3, 0
+    halt
+    halt
+    nextreg NEXTREG_PI_GPIO_3, 15
+    halt
+    halt
+    nextreg NEXTREG_PI_GPIO_3, 0
+    halt
+    halt
+    nextreg NEXTREG_PI_GPIO_3, 15
+    ret
+
 
 notnext:
     ld hl, notnextmsg
@@ -312,6 +415,15 @@ printmsg:
 notnextmsg:
     db "This does not appear to be ZX Spectrum Next.",0
 
+noserver:
+    db "The nextpi-usbmidi server does not seem to be running.",0    
+
+initialized:
+    db "Running. Press space to quit.",0
+
+quitting:
+    db "Shutting down..",0
+
 nextch:
     db 0
 
@@ -325,3 +437,14 @@ note_fine:
 
 chnote:
     db 255,255,255, 255,255,255, 255,255,255
+
+store_NEXTREG_CPU_SPEED:
+    db 0
+store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0:
+    db 0
+store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_2:
+    db 0
+store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_3:
+    db 0
+store_NEXTREG_PERIPHERAL3:
+    db 0
