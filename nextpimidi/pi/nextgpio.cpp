@@ -38,23 +38,27 @@ Nextpi GPIO
 - Pins 18-21 I2S (-> audio, works and is used)
 - Pins 28-31 do not exist in pi0 hardware
 
+- Pins 24-27 reserved for app control
+
 Map:
 
 0x90------------------ 0x91------------------- 0x92------------------- 0x93------------------- (output enable)
 0x98------------------ 0x99------------------- 0x9A------------------- 0x9B------------------- (i/o)
 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
 XX XX XX XX          XX XX XX XX XX       XX XX       XX XX XX XX                   XX XX XX XX
--dead-I2C-          -SPI-----------       -UART       -I2S-------                   -no hardware
+-dead-I2C-          -SPI-----------       -UART       -I2S-------       -AppCtl---- -no hardware
 
 Plan:
 
-            AA BB CC                            DD DD DD DD DD DD DD DD EE FF GG
+            AA BB CC                            DD DD DD DD DD DD DD DD EE FF GG HH
             
-A,B,C = service termination pins. If a pattern of 0 0 0 -> 1 1 1 is seen, service should clean up after itself and die.
-D = 8 bits of data
-E = pi-side 1 bit data counter
-F = next-side 1 bit data counter
-G = transfer direction, 0 = pi->next, 1 = next->pi. Controlled by next.
+A = pi-side 1 bit data counter
+B = next-side 1 bit data counter
+C = transfer direction, 0 = pi->next, 1 = next->pi. Controlled by next.
+D = 8 bits of data (overlaps with I2S, so no sound while this is going)
+E,F,G,H = App control. If a pattern of 0 0 0 0 ->  1 1 1 1 is seen, 
+          service should clean up after itself and die.
+
 */
 
 //#define INCLUDE_TESTCODE
@@ -75,13 +79,13 @@ static unsigned char gpio_prevquitstate = 0x37;
 
 int nextgpio_should_quit()
 {
-    if (!gpio_mmap) return 0;
+    if (!gpio_mmap) return 1;
     int block = 13; // LEVEL register offset
     __sync_synchronize(); 
-    int v = !!(*(gpio_mmap + block) & (1 << pin)); 
+    int v = *(gpio_mmap + block); 
     __sync_synchronize(); 
-    unsigned char currstate = (v >> 4) & 7;
-    int ret = (gpio_prevquitstate == 0 && currstate == 3);
+    unsigned char currstate = (v >> 24) & 15;
+    int ret = (gpio_prevquitstate == 0 && currstate == 15);
     gpio_prevquitstate = currstate;
     return ret;   
 }
@@ -126,10 +130,11 @@ int nextgpio_init()
     gpio_original_val = *(gpio_mmap + 13);
     __sync_synchronize(); 
  
-    // Set pins 4-6 as read, as we're reading them for quit signal
-    nextgpio_config_io(4, 0);
-    nextgpio_config_io(5, 0);
-    nextgpio_config_io(6, 0);
+    // Set pins 4-7 as read, as we're reading them for quit signal
+    nextgpio_config_io(24, 0);
+    nextgpio_config_io(25, 0);
+    nextgpio_config_io(26, 0);
+    nextgpio_config_io(27, 0);
   
   return 0;
 }
@@ -142,7 +147,7 @@ void nextgpio_deinit()
     __sync_synchronize(); 
     *(gpio_mmap + 1) = gpio_original_io[1];
     __sync_synchronize(); 
-    *(gpio_mmap + 2)gpio_original_io[2];
+    *(gpio_mmap + 2) = gpio_original_io[2];
     __sync_synchronize(); 
     
     
@@ -198,7 +203,7 @@ int nextgpio_get_byte(int pinofs)
     if (!gpio_mmap) return 0;
     int block = 13; // LEVEL register offset
     __sync_synchronize(); 
-    int v = !!(*(gpio_mmap + block) & (1 << pin)); 
+    int v = *(gpio_mmap + block); 
     __sync_synchronize(); 
     return (v >> pinofs) & 0xff;
 }
@@ -212,22 +217,25 @@ int main(int parc, char **pars)
     }
     atexit(nextgpio_deinit);
 
-    // write 8 bits starting at 16, + 1 bit starting 24
-    for (int i = 16; i < 25; i++)    
-        nextgpio_config_io(i, 1);
-    // read pin 25
-    nextgpio_config_io(25, 0);
-    
+    // write 8 bits starting at 16
+    for (int i = 0; i < 8; i++)    
+        nextgpio_config_io(i + 16, 1);
+    // write pin 4
+    nextgpio_config_io(4, 1);
+    // read pin 5 and 6
+    nextgpio_config_io(5, 0);
+    nextgpio_config_io(6, 0);
+
     // clear the pins
-    for (int i = 16; i < 25; i++)    
-        nextgpio_set_val(i, 0);
+    nextgpio_set_byte(16, 0);    
+    nextgpio_set_val(4, 0);
     
     int ticktock = 0;
     printf("Running..\n");
     while(1)
     {
         // wait for next to toggle bit
-        while (nextgpio_get_val(25) == ticktock) 
+        while (nextgpio_get_val(5) == ticktock) 
         { 
             if (nextgpio_should_quit())
                 return 0;
@@ -235,7 +243,7 @@ int main(int parc, char **pars)
         }
         nextgpio_set_byte(16, rand()); // set 8 bits to random values
         ticktock = !ticktock;
-        nextgpio_set_val(24, ticktock); // toggle our ready bit        
+        nextgpio_set_val(4, ticktock); // toggle our ready bit        
     }
     
     return 0;
