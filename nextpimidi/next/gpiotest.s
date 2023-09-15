@@ -53,13 +53,30 @@
     STORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_3
 
     nextreg NEXTREG_CPU_SPEED, 3 ; 28mhz mode.
-    nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, 32+64 ; set pin 5 & 6 as write access
+    nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, 32+64 ; set pin 5 & 6 as write access (pin 4 read)
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_2, 0 ; read all GPIO bits in 0x9A
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, 1+2+4+8 ; set first four bits as write
     
-    nextreg NEXTREG_PI_GPIO_0, 32 ; say we're good for more data
+    ; Read current send counter
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_PI_GPIO_0
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    sla a         ; server writes to pin 4 = 16, *2 = 32
+    and 32        ; mask off any garbage
+    xor 32 ; toggle bit
+    ld d, a
+    ld (nextregopstart+3), a    ; ready for more data    
+nextregopstart:
+    nextreg NEXTREG_PI_GPIO_0, 0 ; value overwritten above
 
-    ld d, 32 ; current flag
+    ld (flipflop), a
+
+    halt ; a little delay
+    halt
+    call check_gpio
+    jp nz, noserver
 
     ld bc, 0
     ld hl, 0
@@ -73,8 +90,9 @@ loop:
     inc b         ; nextreg i/o
 wait_for_data:
     in a, (c)
-    and 32
-    cp d
+    sla a    ; server writes to pin 4, so 0 or 16. *2 = 0 or 32
+    and 32   ; make sure there's no garbage bits
+    cp d     ; does this match our current state?
     jr nz, wait_for_data
 
     ; read the data
@@ -84,30 +102,27 @@ wait_for_data:
     inc b         ; nextreg i/o
     in a, (c)
 
+    ;;;; payload
     and a, 0x07
     out (254), a ; blinky
+    ;;;; /payload
 
     ; toggle bit
-    ld a, 32
-    sub d
+    ld a, d
+    xor 32
     ld d, a
 
-    add a,a
-
-    ld (nextregop+3), a
-
-    ; ready for more data
+    ld (nextregop+3), a    ; ready for more data
 nextregop:
-    nextreg NEXTREG_PI_GPIO_3, 0 ; value overwritten above
+    nextreg NEXTREG_PI_GPIO_0, 0 ; value overwritten above
 
     pop bc
     djnz loop
     dec c
     jr nz, loop
-    dec h
-    jr nz, loop
 
-    call kill_server
+cleanup:
+;    call kill_server
 
     RESTORENEXTREG NEXTREG_CPU_SPEED, store_NEXTREG_CPU_SPEED
     RESTORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0
@@ -117,6 +132,10 @@ nextregop:
     PRINT "all done\r\0"
     POPALL
     ret
+
+noserver:
+    PRINT "GPIO server not responding.\r\0"
+    jp cleanup
 
     ; Transition from 0000 -> 1111 kills the server. Try a couple times with some delay.
 kill_server:
@@ -130,6 +149,26 @@ kill_server:
     halt
     halt
     nextreg NEXTREG_PI_GPIO_3, 15
+    ret
+
+; returns z if data is ready for reading
+check_gpio:
+    push bc
+    push de
+    ld e, a
+    ld a, (flipflop) ; current flag
+    ld d, a
+    ld bc, 0x243B ; nextreg select
+    ld a, NEXTREG_PI_GPIO_0
+    out (c), a
+    inc b         ; nextreg i/o
+    in a, (c)
+    sla a
+    and 32
+    cp d
+    ld a, e
+    pop de
+    pop bc
     ret
 
 
@@ -154,4 +193,5 @@ store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_2:
     db 0
 store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_3:
     db 0
-
+flipflop:
+    db 0
