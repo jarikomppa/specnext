@@ -62,14 +62,11 @@
     out (c), a
     inc b         ; nextreg i/o
     in a, (c)
-    srl a
+    sla a
     and 32
     ; toggle bit
-    ld d, a
-    ld a, 32
-    sub d    
+    xor 32
     ld (flipflop), a
-    add a
     ld (nextreg_pos_init+3), a
 nextreg_pos_init:    
     nextreg NEXTREG_PI_GPIO_0, 0 ; say we're good for more data (value overwritten above)
@@ -103,12 +100,16 @@ clearchannels:
     call setchip
     call setay
 
+    
     call read_gpio_timeout
+    cp 'I'
+    jr z, alreadyati
     cp 'M'
     jp nz, server_failed
     call read_gpio_timeout
     cp 'I'
     jp nz, server_failed
+alreadyati:    
     call read_gpio_timeout
     cp 'D'
     jp nz, server_failed
@@ -117,11 +118,15 @@ clearchannels:
     call printmsg
 
 forever:
-    in a, (0xfe) ; check for space
-    and 0x80
+    ld bc, 0x7ffe
+    in a, (c) ; check for space
+    and 1
     jp z, shutdown
+    call check_gpio
+    jr nz forever
+
     call read_gpio
-    and 0xf0
+    and 0xf0        ; we don't care about midi channel, just react to everything
     ld b, a
     call read_gpio
     ld h, a
@@ -181,8 +186,10 @@ tryloop:
     jr nz, tryloop
     cp l
     jr nz, tryloop
+    pop hl
     ret
 gotdata:
+    pop hl
     jp read_gpio    
 
 
@@ -198,7 +205,7 @@ check_gpio:
     out (c), a
     inc b         ; nextreg i/o
     in a, (c)
-    srl a
+    sla a
     and 32
     cp d
     ld a, e
@@ -221,7 +228,7 @@ read_gpio:
     inc b         ; nextreg i/o
 wait_for_data:
     in a, (c)
-    srl a
+    sla a
     and 32
     cp d
     jr nz, wait_for_data
@@ -232,22 +239,19 @@ wait_for_data:
     out (c), a
     inc b         ; nextreg i/o
     in a, (c)
-
     ld e, a
 
+    ld a, d
     ; toggle bit
-    ld a, 32
-    sub d
-    ld d, a
+    xor 32
 
-    ld (nextreg_pos_readgpio+3), a
-    ; ready for more data
+    ld (nextreg_pos_readgpio+3), a ; ready for more data
 nextreg_pos_readgpio:
     nextreg NEXTREG_PI_GPIO_0, 0 ; overwritten above
 
-    ld a, d
     ld (flipflop), a
     ld a, e
+
     pop de
     pop bc
     ret
@@ -416,19 +420,19 @@ notnextmsg:
     db "This does not appear to be ZX Spectrum Next.",0
 
 noserver:
-    db "The nextpi-usbmidi server does not seem to be running.",0    
+    db "The nextpi-usbmidi server does not seem to be running.\r",0
 
 initialized:
-    db "Running. Press space to quit.",0
+    db "Running. Press space to quit.\r",0
 
 quitting:
-    db "Shutting down..",0
+    db "Shutting down..\r",0
 
 nextch:
     db 0
 
 flipflop:
-    db 1
+    db 32
 
 note_coarse:
     db 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 14, 14, 13, 12, 11, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
