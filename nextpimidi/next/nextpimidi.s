@@ -123,7 +123,7 @@ forever:
     and 1
     jp z, shutdown
     call check_gpio
-    jr nz forever
+    jr nz, forever
 
     call read_gpio
     and 0xf0        ; we don't care about midi channel, just react to everything
@@ -142,13 +142,17 @@ notnoteoff:
     jr nz, notnoteon
     srl l
     srl l
-    ld a, l
+    ld a, l    
     cp 15
     jr c, under15
     ld a, 15
-under15:    
+under15:
+    and a, a
+    jr nz, over0
+    ld a, 1
+over0:    
     ld l, a
-    call playnote ; h = note, l = (volume/4)<15?(volume/4):15 (so 0..50% volume ramp up and max vol after that)
+    call playnote ; h = note, l = volume/4, if 0, 1; if over 15, 15. (so 6..50% volume ramp up and max vol after that)
     jp forever
 notnoteon:
     jp forever
@@ -158,6 +162,14 @@ shutdown:
     call printmsg
 
 cleanup:
+    ld hl, 0
+    ld a, 0
+    ld b, 9
+.clearchannels:
+    call playay
+    inc a
+    djnz .clearchannels
+
     call kill_server
     RESTORENEXTREG NEXTREG_CPU_SPEED, store_NEXTREG_CPU_SPEED
     RESTORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0
@@ -382,6 +394,7 @@ stopnotefound:
     ; found, c = channel (0-8), (hl) = position in chnote
     ld (hl), 255
     ld a, c
+    ld (nextch), a ; reuse stopped channel
     ld h, 0
     ld l, 0
     call playay ; play silent note on the channel
