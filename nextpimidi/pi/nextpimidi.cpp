@@ -33,13 +33,34 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <cstdlib>
 #include "RtMidi.h"
 #include <queue>
+#include <vector>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h> // sched_yield
 #include "nextgpio.h"
 
+enum RUNSTATE
+{
+    RUN_IDLE,
+    RUN_RECEIVE,
+    RUN_STARTSEND,
+    RUN_SEND
+};
+
+volatile RUNSTATE gRunstate = RUN_IDLE;
+
 // Data queue, filled from MIDI events
 std::queue<unsigned char> dq;
+
+
+int gAppControlPatterns[4 * 2] = 
+{
+    0,15, // Quit
+    10,12, // move to receive mode
+    10,3, // move to send mode
+    10,6 // move to idle mode
+};
+
 
 // rtmidi callback, we'll just put the MIDI messages in a queue to be sent down to next 
 void mycallback( double deltatime, std::vector< unsigned char > *message, void *userData )
@@ -47,40 +68,75 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
     unsigned int nBytes = message->size();
     if (nBytes >= 3)
     {
-        dq.push(message->at(0));
-        dq.push(message->at(1));
-        dq.push(message->at(2));
+        if (gRunstate == RUN_RECEIVE)
+        {
+            dq.push(message->at(0));
+            dq.push(message->at(1));
+            dq.push(message->at(2));
+        }
     }
 }
- 
-int main()
+
+void init_receive()
 {
+    gRunstate = RUN_IDLE;
+    // clear data queue
+    while (!dq.empty()) dq.pop();
     // Send "MID" first, so the client knows we're good
     dq.push('M');
     dq.push('I');
     dq.push('D');
 
+    // write 8 bits starting at 16
+    for (int i = 0; i < 8; i++)    
+        nextgpio_config_io(i + 16, 1);
+    nextgpio_set_byte(16, 0);    
+    gRunstate = RUN_RECEIVE;
+}
+
+void init_idle()
+{
+    gRunstate = RUN_IDLE;
+    // clear data queue
+    while (!dq.empty()) dq.pop();
+
+    // Restore the data pins to original state
+    for (int i = 0; i < 8; i++)    
+        nextgpio_restore_io(i + 16);
+}
+
+void init_send()
+{
+    gRunstate = RUN_IDLE;
+    // clear data queue
+    while (!dq.empty()) dq.pop();
+
+    // read 8 bits starting at 16
+    for (int i = 0; i < 8; i++)    
+        nextgpio_config_io(i + 16, 0);
+
+    gRunstate = RUN_STARTSEND;
+}
+
+int main()
+{
+
     int ticktock = 0;
-     if (nextgpio_init())
+    if (nextgpio_init())
     {
         return 0;
     }
     atexit(nextgpio_deinit);
 
-    // write 8 bits starting at 16
-    for (int i = 0; i < 8; i++)    
-        nextgpio_config_io(i + 16, 1);
     // write pin 4
     nextgpio_config_io(4, 1);
-    // read pin 5 and 6
+    // read pin 5 
     nextgpio_config_io(5, 0);
-    nextgpio_config_io(6, 0);
-
     // clear the pins
-    nextgpio_set_byte(16, 0);    
     nextgpio_set_val(4, 0);
 
     RtMidiIn *midiin = new RtMidiIn();
+    RtMidiOut *midiout = new RtMidiOut();
  
     // Check available ports.
     unsigned int nPorts = midiin->getPortCount();
@@ -93,6 +149,7 @@ int main()
     }
  
     midiin->openPort(nPorts-1); // last port seems to work
+    midiout->openPort(nPorts-1); // no idea if the same is true for send..
 
     // Set our callback function.  This should be done immediately after
     // opening the port to avoid having incoming messages written to the
@@ -105,30 +162,98 @@ int main()
     printf("Running..\n");
     while(1)
     {
-        // wait for data in queue
-        while (dq.empty()) 
-        { 
-            if (nextgpio_should_quit())
-                goto cleanup;
-            sched_yield(); 
+        int appctl = nextgpio_app_control(gAppControlPatterns,4);
+        switch (appctl)
+        {
+            case 1:
+                goto cleanup();
+                break;
+            case 2: 
+                init_receive();
+                break;
+            case 3:
+                init_send();
+                break;
+            case 4:
+                init_idle();
+                break;
         }
-        // wait for next to toggle bit
-        while (nextgpio_get_val(5) == ticktock) 
-        { 
-            if (nextgpio_should_quit())
-                goto cleanup;
-            sched_yield(); 
+
+        switch (gRunstate)
+        {
+        case RUN_RECEIVE:
+            if (!dq.empty())
+            {
+                if (nextgpio_get_val(5) != ticktock)
+                {
+                    unsigned char d = dq.front();
+                    dq.pop();
+                    nextgpio_set_byte(16, d);
+                    ticktock = !ticktock;
+                    nextgpio_set_val(4, ticktock); // toggle our ready bit        
+                }
+            }
+            break;
+        case RUN_SEND:
+            if (nextgpio_get_val(5) != ticktock)
+            {                    
+                unsigned char d = nextgpio_get_byte(16);
+                dq.push(d);
+                ticktock = !ticktock;
+                nextgpio_set_val(4, ticktock); // toggle our ready bit        
+            }
+            if (dq.size() >= 3)
+            {
+                std::vector<unsigned char> message;
+                message.push_back(dq.front()); dq.pop();
+                message.push_back(dq.front()); dq.pop();
+                message.push_back(dq.front()); dq.pop();
+                midiout->sendMessage(&message);
+            }
+            break;
+        case RUN_STARTSEND:
+            {
+                // Expect MID, accept ID
+                if (nextgpio_get_val(5) != ticktock)
+                {                    
+                    unsigned char d = nextgpio_get_byte(16);
+                    if (d == 'M' || d == 'I' || d == 'D')
+                        dq.push(d);
+                    ticktock = !ticktock;
+                    nextgpio_set_val(4, ticktock); // toggle our ready bit        
+                }
+
+                if (dq.size() == 2 && dq.front() == 'I')
+                {
+                    dq.pop();
+                    if (dq.front() == 'D') gRunstate = RUN_SEND;
+                    
+                    dq.pop();
+                }
+
+                if (dq.size() == 3 && dq.front() == 'M')
+                {
+                    int ok = 1;
+                    dq.pop();
+                    if (dq.front() != 'I') ok = 0;
+                    dq.pop();
+                    if (dq.front() != 'D') ok = 0;
+                    dq.pop();
+                    if (ok) gRunstate = RUN_SEND;
+                }
+                else
+                if (dq.size() >= 3) dq.pop();
+            }
+            break;
         }
-        unsigned char d = dq.front();
-        dq.pop();
-        nextgpio_set_byte(16, d);
-        ticktock = !ticktock;
-        nextgpio_set_val(4, ticktock); // toggle our ready bit        
+        
+        sched_yield(); 
     }
  
   // Clean up
 cleanup:
     delete midiin;
+    delete midiout;
 
     return 0;
 }

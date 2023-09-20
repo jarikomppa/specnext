@@ -39,6 +39,9 @@ void nextgpio_deinit();
 // Configure pin as read (0) or write (1)
 void nextgpio_config_io(int pin, int output);
 
+// Restore pin to its original state
+void nextgpio_restore_io(int pin);
+
 // Set pin value (to 1 or 0)
 void nextgpio_set_val(int pin, int val);
 
@@ -53,5 +56,8 @@ int nextgpio_get_byte(int pinofs);
 
 // Check whether your service application should quit. Do this often.
 int nextgpio_should_quit();
+
+// Alternative to should_quit, where you can check if one of user-defined patterns appears.
+int nextgpio_app_control(int *pair, int pairs);
 
 #endif

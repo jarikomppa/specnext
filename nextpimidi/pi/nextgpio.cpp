@@ -75,7 +75,7 @@ volatile static unsigned int *gpio_mmap = 0;
 
 static unsigned int gpio_original_io[3];
 static unsigned int gpio_original_val;
-static unsigned char gpio_prevquitstate = 0x37;
+static unsigned char gpio_prevappctl = 0x37;
 
 int nextgpio_should_quit()
 {
@@ -85,8 +85,24 @@ int nextgpio_should_quit()
     int v = *(gpio_mmap + block); 
     __sync_synchronize(); 
     unsigned char currstate = (v >> 24) & 15;
-    int ret = (gpio_prevquitstate == 0 && currstate == 15);
-    gpio_prevquitstate = currstate;
+    int ret = (gpio_prevappctl == 0 && currstate == 15);
+    gpio_prevappctl = currstate;
+    return ret;   
+}
+
+int nextgpio_app_control(int *pair, int pairs)
+{
+    if (!gpio_mmap) return 1;
+    int block = 13; // LEVEL register offset
+    __sync_synchronize(); 
+    int v = *(gpio_mmap + block); 
+    __sync_synchronize(); 
+    unsigned char currstate = (v >> 24) & 15;
+    int ret = 0;
+    for (int i = 0; i < pairs; i++)
+        if (gpio_prevappctl == pair[i*2+0] && currstate == pair[i*2+1])
+            ret = i + 1;
+    gpio_prevappctl = currstate;
     return ret;   
 }
 
@@ -170,6 +186,21 @@ void nextgpio_config_io(int pin, int output)
     unsigned int d = *(gpio_mmap + block);
     __sync_synchronize(); 
     *(gpio_mmap + block) = (d & ~(7 << pinofs)) | (output << pinofs);
+    __sync_synchronize(); 
+}
+
+void nextgpio_restore_io(int pin)
+{
+    if (!gpio_mmap) return;
+    // input or output state is set as 3 bits per pin, stored as 10 pins per dword
+    // 000 = input, 001 = output, (010 = special peripheral whatever)
+    int block = pin / 10;
+    int pinofs = (pin % 10) * 3;
+    // mask out the 3 bits and set the one bit as requested
+    __sync_synchronize(); 
+    unsigned int d = *(gpio_mmap + block);
+    __sync_synchronize(); 
+    *(gpio_mmap + block) = (d & ~(7 << pinofs)) | (gpio_original_io[block] & (7 << pinofs));
     __sync_synchronize(); 
 }
 
