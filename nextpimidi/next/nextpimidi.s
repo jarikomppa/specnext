@@ -44,6 +44,12 @@
 ; D = 8 bits of data (overlaps with I2S, so no sound while this is going)
 ; E,F,G,H = App control. If a pattern of 0 0 0 0 ->  1 1 1 1 is seen, 
 ;           service should clean up after itself and die.
+;
+; AppCtl:
+;  0 -> 15: quit
+; 10 -> 12: move to receive mode
+; 10 ->  3: move to send mode
+; 10 ->  6: move to idle mode
 
     STORENEXTREG NEXTREG_CPU_SPEED, store_NEXTREG_CPU_SPEED
     STORENEXTREG NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, store_NEXTREG_PI_GPIO_OUTPUT_ENABLE_0
@@ -55,6 +61,13 @@
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_0, 32+64 ; set pin 5 & 6 as write access
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_2, 0 ; read all GPIO bits in 0x9A
     nextreg NEXTREG_PI_GPIO_OUTPUT_ENABLE_3, 1+2+4+8 ; set first four bits as write
+
+    ; switch to "receive midi" mode
+    nextreg NEXTREG_PI_GPIO_3, 10
+    halt
+    halt
+    nextreg NEXTREG_PI_GPIO_3, 12
+
 
     ; Read current send counter
     ld bc, 0x243B ; nextreg select

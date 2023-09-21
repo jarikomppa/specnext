@@ -166,7 +166,7 @@ int main()
         switch (appctl)
         {
             case 1:
-                goto cleanup();
+                goto cleanup;
                 break;
             case 2: 
                 init_receive();
