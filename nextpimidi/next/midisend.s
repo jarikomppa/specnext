@@ -122,7 +122,7 @@ parseloop:
     or 'a'-'A' ; if it happens to be upper case, now it's lower
     sub 'a'
     call readintvar
-    ld a, d
+    ld a, e
     ld (bc), a
     inc bc
     inc hl
