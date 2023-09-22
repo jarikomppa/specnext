@@ -1,6 +1,6 @@
     DEVICE ZXSPECTRUMNEXT
 ; killserver
-; nextpi gpio server killer dot
+; nextpi gpio server killer dot (or any other compliant gpio server)
 ; by Jari Komppa, http://iki.fi/sol
 ; 2023
 ;

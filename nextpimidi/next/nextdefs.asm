@@ -46,9 +46,11 @@
 		push bc
 		push de
 		push hl
+        exx
     ENDM
 
     MACRO POPALL
+        exx
 		pop hl
 		pop de
 		pop bc

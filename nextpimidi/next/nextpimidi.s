@@ -1,6 +1,6 @@
     DEVICE ZXSPECTRUMNEXT
 ; nextpimidi
-; nextpi midi test
+; nextpi midi test - receive midi and play ay
 ; by Jari Komppa, http://iki.fi/sol
 ; 2023
 ;
