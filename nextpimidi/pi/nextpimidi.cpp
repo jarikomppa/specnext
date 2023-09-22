@@ -118,9 +118,8 @@ void init_send()
     gRunstate = RUN_STARTSEND;
 }
 
-int main()
-{
-
+int main(int parc, char ** pars)
+{    
     int ticktock = 0;
     if (nextgpio_init())
     {
@@ -140,7 +139,11 @@ int main()
  
     // Check available input ports.
     unsigned int inPorts = midiin->getPortCount();
-    printf("%d in ports\n", inPorts);
+    unsigned int inpick = inPorts - 1;
+    if (parc > 1) inpick = atoi(pars[1]);
+    if (inpick < 0) inpick = 0;
+    if (inpick >= inPorts) inpick = inPorts - 1;
+    printf("-- %d in ports\n", inPorts);
     if ( inPorts == 0 ) 
     {
         std::cout << "No input ports available!\n";
@@ -148,11 +151,20 @@ int main()
         delete midiout;
         return 1;
     }
-    midiin->openPort(inPorts-1); 
- 
+    for (int i = 0; i < inPorts; i++)
+    {
+        printf("%s", (i == inpick) ? "-> " : "   ");
+        printf("%d:%s\n", i, midiin->getPortName(i).c_str());
+    }
+    midiin->openPort(inpick); 
+
     // Check available output ports.
     unsigned int outPorts = midiout->getPortCount();
-    printf("%d out ports\n", outPorts);
+    unsigned int outpick = outPorts - 2;
+    if (parc > 2) outpick = atoi(pars[2]);
+    if (outpick < 0) outpick = 0;
+    if (outpick >= inPorts) outpick = outPorts - 1;
+    printf("\n-- %d out ports\n", outPorts);
     if ( outPorts == 0 ) 
     {
         std::cout << "No output ports available!\n";
@@ -160,7 +172,16 @@ int main()
         delete midiout;
         return 1;
     }
-    midiout->openPort(outPorts-1); 
+    for (int i = 0; i < outPorts; i++)
+    {
+        printf("%s", (i == outpick) ? "-> " : "   ");
+        printf("%d:%s\n", i, midiout->getPortName(i).c_str());
+    }
+    midiout->openPort(outpick); 
+    if (parc < 2)
+        printf(
+            "\nIf selected ports are bad, give indexes as commandline parameters\n"
+            "e.g, nextpi-usbmidi 0 2\n\n");
 
     // Set our callback function.  This should be done immediately after
     // opening the port to avoid having incoming messages written to the
