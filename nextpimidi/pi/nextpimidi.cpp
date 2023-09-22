@@ -138,18 +138,29 @@ int main()
     RtMidiIn *midiin = new RtMidiIn();
     RtMidiOut *midiout = new RtMidiOut();
  
-    // Check available ports.
-    unsigned int nPorts = midiin->getPortCount();
-    // that seems to always be 2.
-    printf("%d ports\n");
-    if ( nPorts == 0 ) 
+    // Check available input ports.
+    unsigned int inPorts = midiin->getPortCount();
+    printf("%d in ports\n", inPorts);
+    if ( inPorts == 0 ) 
     {
-        std::cout << "No ports available!\n";
-        goto cleanup;
+        std::cout << "No input ports available!\n";
+        delete midiin;
+        delete midiout;
+        return 1;
     }
+    midiin->openPort(inPorts-1); 
  
-    midiin->openPort(nPorts-1); // last port seems to work
-    midiout->openPort(nPorts-1); // no idea if the same is true for send..
+    // Check available output ports.
+    unsigned int outPorts = midiout->getPortCount();
+    printf("%d out ports\n", outPorts);
+    if ( outPorts == 0 ) 
+    {
+        std::cout << "No output ports available!\n";
+        delete midiin;
+        delete midiout;
+        return 1;
+    }
+    midiout->openPort(outPorts-1); 
 
     // Set our callback function.  This should be done immediately after
     // opening the port to avoid having incoming messages written to the
@@ -166,7 +177,9 @@ int main()
         switch (appctl)
         {
             case 1:
-                goto cleanup;
+                delete midiin;
+                delete midiout;
+                return 0;
                 break;
             case 2: 
                 init_receive();
@@ -250,8 +263,6 @@ int main()
         sched_yield(); 
     }
  
-  // Clean up
-cleanup:
     delete midiin;
     delete midiout;
 
